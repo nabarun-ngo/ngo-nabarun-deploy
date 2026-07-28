@@ -20,7 +20,7 @@ on:
         required: true
         type: choice
         options:
-          - frontend
+          - fe-public-site
       target_environment:
         description: 'Deploy target'
         required: true

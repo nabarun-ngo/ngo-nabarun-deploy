@@ -40,6 +40,10 @@ on:
       config_template:
         type: string
         required: true
+      firebase_site:
+        type: string
+        required: false
+        default: ''
       secrets_provider:
         type: string
         required: false
@@ -190,15 +194,24 @@ jobs:
           # output_path is already relative to that root.
           echo "path=${{ inputs.output_path }}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve Firebase Site
+        id: resolve_site
+        run: |
+          if [[ -n "${{ inputs.firebase_site }}" ]]; then
+            echo "site=${{ inputs.firebase_site }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ inputs.target_environment }}" == "prod" ]]; then
+            echo "site=${{ secrets.FB_PROJECT_ID }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "site=${{ secrets.FB_PROJECT_ID }}-${{ inputs.target_environment }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Render firebase.json from template
         uses: ./.github/actions/render-config
         with:
           template_path: ${{ inputs.config_template }}
           output_path: app-build/firebase.json
           variables: |
-            DEPLOY_ENV=${{ inputs.target_environment }}
-            FB_SITE_STAGE=${{ secrets.FB_PROJECT_ID }}-staging
-            FB_SITE_PROD=${{ secrets.FB_PROJECT_ID }}
+            FB_SITE=${{ steps.resolve_site.outputs.site }}
             BUILD_OUTPUT_PATH=${{ inputs.output_path }}
           strict: 'false'
 

@@ -57,8 +57,11 @@ outputs:
     description: deploy.serviceKey
     value: ${{ steps.parse.outputs.service_key }}
   gae_service:
-    description: environments[target].{serviceKey} resolved value
+    description: environments[target].{serviceKey} resolved value (legacy)
     value: ${{ steps.parse.outputs.gae_service }}
+  target_service:
+    description: environments[target].{serviceKey} resolved value (generic)
+    value: ${{ steps.parse.outputs.target_service }}
   source_ref:
     description: environments[target].sourceRef
     value: ${{ steps.parse.outputs.source_ref }}
@@ -149,9 +152,9 @@ runs:
         SVC_KEY=$(echo "$MANIFEST"      | jq -r '.deploy.serviceKey // ""')
 
         # Resolve GAE service name via serviceKey indirection
-        GAE_SERVICE=""
+        TARGET_SERVICE=""
         if [[ -n "$SVC_KEY" ]]; then
-          GAE_SERVICE=$(echo "$ENV_BLOCK" | jq -r --arg key "$SVC_KEY" '.[$key] // ""')
+          TARGET_SERVICE=$(echo "$ENV_BLOCK" | jq -r --arg key "$SVC_KEY" '.[$key] // ""')
         fi
 
         SOURCE_REF=$(echo "$ENV_BLOCK"      | jq -r '.sourceRef')
@@ -181,7 +184,8 @@ runs:
           echo "platform=$PLATFORM"
           echo "config_template=$CFG_TPL"
           echo "service_key=$SVC_KEY"
-          echo "gae_service=$GAE_SERVICE"
+          echo "gae_service=$TARGET_SERVICE"
+          echo "target_service=$TARGET_SERVICE"
           echo "source_ref=$SOURCE_REF"
           echo "db_migrate=$DB_MIGRATE"
           echo "db_command=$DB_CMD"
@@ -212,7 +216,7 @@ runs:
           echo "| Build root | \`${{ steps.parse.outputs.build_root }}\` |"
           echo "| App root | \`${{ steps.parse.outputs.app_root }}\` |"
           echo "| Source ref | \`${{ steps.parse.outputs.source_ref }}\` |"
-          echo "| GAE service | \`${{ steps.parse.outputs.gae_service }}\` |"
+          echo "| Target service | \`${{ steps.parse.outputs.target_service }}\` |"
           echo "| DB migrate | ${{ steps.parse.outputs.db_migrate }} |"
           echo "| Secrets provider | \`${{ steps.parse.outputs.secrets_provider }}\` |"
           echo "| Doppler project | \`${{ steps.parse.outputs.doppler_project }}\` |"

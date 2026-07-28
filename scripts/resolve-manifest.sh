@@ -30,9 +30,9 @@ if [[ -z "$ENV_BLOCK" ]]; then
 fi
 
 SERVICE_KEY=$(echo "$MANIFEST" | jq -r '.deploy.serviceKey // ""')
-GAE_SERVICE=""
+TARGET_SERVICE=""
 if [[ -n "$SERVICE_KEY" ]]; then
-  GAE_SERVICE=$(echo "$ENV_BLOCK" | jq -r --arg k "$SERVICE_KEY" '.[$k] // ""')
+  TARGET_SERVICE=$(echo "$ENV_BLOCK" | jq -r --arg k "$SERVICE_KEY" '.[$k] // ""')
 fi
 
 echo "app_name=$(echo "$MANIFEST" | jq -r '.metadata.name')"
@@ -48,7 +48,8 @@ echo "bundle_includes=$(echo "$MANIFEST" | jq -r '.build.bundleIncludes // [] | 
 echo "platform=$(echo "$MANIFEST" | jq -r '.deploy.platform')"
 echo "config_template=$(echo "$MANIFEST" | jq -r '.deploy.configTemplate // ""')"
 echo "service_key=$SERVICE_KEY"
-echo "gae_service=$GAE_SERVICE"
+echo "gae_service=$TARGET_SERVICE"
+echo "target_service=$TARGET_SERVICE"
 echo "source_ref=$(echo "$ENV_BLOCK" | jq -r '.sourceRef')"
 echo "db_migrate=$(echo "$MANIFEST" | jq -r '.database.migrate // false')"
 echo "db_command=$(echo "$MANIFEST" | jq -r '.database.command // ""')"

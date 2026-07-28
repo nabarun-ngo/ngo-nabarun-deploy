@@ -92,6 +92,7 @@ jobs:
       secrets_provider: ${{ steps.resolve.outputs.secrets_provider }}
       doppler_project: ${{ steps.resolve.outputs.doppler_project }}
       doppler_config: ${{ steps.resolve.outputs.doppler_config }}
+      target_service: ${{ steps.resolve.outputs.target_service }}
       source_ref: ${{ steps.resolve.outputs.source_ref }}
 
     steps:
@@ -170,6 +171,7 @@ jobs:
       secrets_provider: ${{ needs.manifest.outputs.secrets_provider }}
       doppler_project: ${{ needs.manifest.outputs.doppler_project }}
       doppler_config: ${{ needs.manifest.outputs.doppler_config }}
+      firebase_site: ${{ needs.manifest.outputs.target_service }}
       ref: ${{ needs.resolve_ref.outputs.ref }}
       github_environment: ${{ needs.resolve_env.outputs.github_environment }}
       target_environment: ${{ needs.context.outputs.target_environment }}

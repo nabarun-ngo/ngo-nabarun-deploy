@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "${FB_SITE_STAGE}",
+    "site": "${FB_SITE}",
     "public": "${BUILD_OUTPUT_PATH}",
     "ignore": [
       "firebase.json",

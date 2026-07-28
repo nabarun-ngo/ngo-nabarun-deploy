@@ -86,9 +86,6 @@ jobs:
           case "$EVENT_NAME" in
             schedule)
               # Map cron expression to profile from tests.json
-              PROFILES=$(jq -r '.schedules[] | select(.trigger == null or .trigger == "cron")' \
-                config/schedules/tests.json 2>/dev/null || echo "")
-
               if [[ "$CRON_SCHEDULE" == "0 3 * * *" ]]; then
                 PROFILE=$(jq -r '.schedules[] | select(.id == "nightly-smoke")' config/schedules/tests.json)
                 TEST_TAGS=$(echo "$PROFILE" | jq -r '.profile.tags')
@@ -121,12 +118,14 @@ jobs:
               ;;
           esac
 
-          echo "test_tags=$TEST_TAGS"                 >> "$GITHUB_OUTPUT"
-          echo "target_environment=$TARGET_ENV"       >> "$GITHUB_OUTPUT"
-          echo "parallelism=$PARALLELISM"             >> "$GITHUB_OUTPUT"
-          echo "timeout_minutes=$TIMEOUT"             >> "$GITHUB_OUTPUT"
-          echo "github_environment=$GH_ENV"           >> "$GITHUB_OUTPUT"
-          echo "report_title=$REPORT_TITLE"           >> "$GITHUB_OUTPUT"
+          {
+            echo "test_tags=$TEST_TAGS"
+            echo "target_environment=$TARGET_ENV"
+            echo "parallelism=$PARALLELISM"
+            echo "timeout_minutes=$TIMEOUT"
+            echo "github_environment=$GH_ENV"
+            echo "report_title=$REPORT_TITLE"
+          } >> "$GITHUB_OUTPUT"
 
   # ──────────────────────────────────────────────────────────────────────────
   # 2. Execute tests

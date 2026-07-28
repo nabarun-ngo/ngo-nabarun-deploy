@@ -122,12 +122,14 @@ jobs:
             TARGET_ENV="stage"
           fi
 
-          echo "trigger_type=$TRIGGER_TYPE"    >> "$GITHUB_OUTPUT"
-          echo "manifest_name=$MANIFEST_NAME"  >> "$GITHUB_OUTPUT"
-          echo "target_environment=$TARGET_ENV" >> "$GITHUB_OUTPUT"
-          echo "tag_name=$TAG_NAME"             >> "$GITHUB_OUTPUT"
-          echo "approval_mode=$APPROVAL_MODE"   >> "$GITHUB_OUTPUT"
-          echo "workflow_type=$WORKFLOW_TYPE"   >> "$GITHUB_OUTPUT"
+          {
+            echo "trigger_type=$TRIGGER_TYPE"
+            echo "manifest_name=$MANIFEST_NAME"
+            echo "target_environment=$TARGET_ENV"
+            echo "tag_name=$TAG_NAME"
+            echo "approval_mode=$APPROVAL_MODE"
+            echo "workflow_type=$WORKFLOW_TYPE"
+          } >> "$GITHUB_OUTPUT"
 
           echo "::notice::Context resolved — trigger=$TRIGGER_TYPE, manifest=$MANIFEST_NAME, env=$TARGET_ENV, tag=$TAG_NAME"
 

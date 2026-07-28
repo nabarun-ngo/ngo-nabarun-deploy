@@ -74,10 +74,12 @@ jobs:
             *)     MATRIX='{"environment":["stage","prod"]}' ;;
           esac
 
-          echo "matrix=$MATRIX"            >> "$GITHUB_OUTPUT"
-          echo "keep_versions=$INPUT_KEEP" >> "$GITHUB_OUTPUT"
-          echo "stale_days=$INPUT_DAYS"    >> "$GITHUB_OUTPUT"
-          echo "dry_run=$INPUT_DRY"        >> "$GITHUB_OUTPUT"
+          {
+            echo "matrix=$MATRIX"
+            echo "keep_versions=$INPUT_KEEP"
+            echo "stale_days=$INPUT_DAYS"
+            echo "dry_run=$INPUT_DRY"
+          } >> "$GITHUB_OUTPUT"
 
   # ──────────────────────────────────────────────────────────────────────────
   # Cleanup per environment
@@ -139,7 +141,7 @@ jobs:
             SERVING_COUNT=0
             TO_DELETE=()
 
-            while IFS=$'\t' read -r VID SPLIT STATUS; do
+            while IFS=$'\t' read -r VID _ STATUS; do
               [[ -z "$VID" ]] && continue
               if [[ "$STATUS" == "SERVING" || ( "$SERVING_COUNT" -lt "$KEEP_VERSIONS" ) ]]; then
                 (( SERVING_COUNT++ ))
@@ -191,8 +193,8 @@ jobs:
           echo "| Staging bucket | ${STAGING_BUCKET} | Files older than ${STALE_DAYS}d: ${COUNT} |" >> cleanup-summary.md
 
           if [[ -n "$STALE_FILES" && "$DRY_RUN" == "false" ]]; then
-            echo "$STALE_FILES" | while read f; do
-              [[ -n "$f" ]] && gsutil rm "$f" 2>/dev/null || true
+            echo "$STALE_FILES" | while read -r f; do
+              if [[ -n "$f" ]]; then gsutil rm "$f" 2>/dev/null || true; fi
             done
           fi
 
@@ -223,7 +225,7 @@ jobs:
           AR_DELETED=0
           while IFS= read -r REPO; do
             [[ -z "$REPO" ]] && continue
-            REPO_PATH=$(echo "$REPO" | sed 's|.*/repositories/||')
+            REPO_PATH="${REPO##*/repositories/}"
 
             UNTAGGED=$(gcloud artifacts docker images list "$REPO" \
               --project="$GCP_PROJECT_ID" \
@@ -234,11 +236,13 @@ jobs:
             echo "| $REPO_PATH | Untagged images: $COUNT |" >> cleanup-summary.md
 
             if [[ -n "$UNTAGGED" && "$DRY_RUN" == "false" ]]; then
-              echo "$UNTAGGED" | while read img; do
-                [[ -n "$img" ]] && gcloud artifacts docker images delete "$img" \
-                  --project="$GCP_PROJECT_ID" \
-                  --delete-tags \
-                  --quiet 2>/dev/null || true
+              echo "$UNTAGGED" | while read -r img; do
+                if [[ -n "$img" ]]; then
+                  gcloud artifacts docker images delete "$img" \
+                    --project="$GCP_PROJECT_ID" \
+                    --delete-tags \
+                    --quiet 2>/dev/null || true
+                fi
               done
               AR_DELETED=$(( AR_DELETED + COUNT ))
             fi

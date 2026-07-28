@@ -175,9 +175,11 @@ jobs:
             TAG_NAME="$NEW_BASE"
           fi
 
-          echo "tag_name=$TAG_NAME"     >> "$GITHUB_OUTPUT"
-          echo "tag_stream=$TAG_STREAM" >> "$GITHUB_OUTPUT"
-          echo "bump_type=$BUMP"        >> "$GITHUB_OUTPUT"
+          {
+            echo "tag_name=$TAG_NAME"
+            echo "tag_stream=$TAG_STREAM"
+            echo "bump_type=$BUMP"
+          } >> "$GITHUB_OUTPUT"
           echo "::notice::New tag: $TAG_NAME"
 
       - name: Push git tag

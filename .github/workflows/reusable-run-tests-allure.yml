@@ -268,9 +268,11 @@ jobs:
             TOTAL=0; PASSED=0; FAILED=0; BROKEN=0; SKIPPED=0
           fi
 
-          echo "total_tests=$TOTAL"   >> "$GITHUB_OUTPUT"
-          echo "passed_tests=$PASSED" >> "$GITHUB_OUTPUT"
-          echo "failed_tests=$FAILED" >> "$GITHUB_OUTPUT"
+          {
+            echo "total_tests=$TOTAL"
+            echo "passed_tests=$PASSED"
+            echo "failed_tests=$FAILED"
+          } >> "$GITHUB_OUTPUT"
 
           {
             echo "### Test Results — ${{ inputs.test_tags }}"

@@ -162,8 +162,7 @@ jobs:
               echo "Fetching Cloud Logging entries..."
 
               START_TIME=$(date -u -d "${LAST_HOURS} hours ago" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
-                || date -u -v-${LAST_HOURS}H '+%Y-%m-%dT%H:%M:%SZ')
-              END_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+                || date -u -v-"${LAST_HOURS}H" '+%Y-%m-%dT%H:%M:%SZ')
 
               FULL_FILTER="${LOG_FILTER} AND severity>=${LOG_SEVERITY} AND timestamp>=\"${START_TIME}\""
 
@@ -212,7 +211,7 @@ jobs:
                 echo "No instances to stop (service may auto-scale to zero)"
               else
                 while IFS=$'\t' read -r VERSION INSTANCE_ID; do
-                  [[ -z "$INSTANCE_ID" ]] && continue
+                  if [[ -z "$INSTANCE_ID" ]]; then continue; fi
                   echo "Deleting instance $INSTANCE_ID (version: $VERSION)..."
                   gcloud app instances delete "$INSTANCE_ID" \
                     --service="$SERVICE_NAME" \
@@ -275,8 +274,8 @@ jobs:
 
                 KEEP_COUNT=0
                 DELETABLE=()
-                while IFS=$'\t' read -r VID SPLIT STATUS; do
-                  [[ -z "$VID" ]] && continue
+                while IFS=$'\t' read -r VID _ STATUS; do
+                  if [[ -z "$VID" ]]; then continue; fi
                   if [[ "$STATUS" == "SERVING" || ( $KEEP_COUNT -lt $KEEP_VERSIONS ) ]]; then
                     (( KEEP_COUNT++ ))
                   else
@@ -317,8 +316,8 @@ jobs:
                 echo ""
               } > gcs-cleanup.txt
 
-              echo "$FILES" | while read -r DATETIME FILEPATH; do
-                [[ -z "$FILEPATH" ]] && continue
+              echo "$FILES" | while read -r _ FILEPATH; do
+                if [[ -z "$FILEPATH" ]]; then continue; fi
                 echo "$FILEPATH" >> gcs-cleanup.txt
                 if [[ "$DRY_RUN" == "false" ]]; then
                   gsutil rm "$FILEPATH" 2>/dev/null || true
@@ -358,11 +357,13 @@ jobs:
                 echo "Repo: $REPO — $COUNT untagged images" | tee -a ar-cleanup.txt
 
                 if [[ -n "$UNTAGGED" && "$DRY_RUN" == "false" ]]; then
-                  echo "$UNTAGGED" | while read img; do
-                    [[ -n "$img" ]] && gcloud artifacts docker images delete "$img" \
-                      --project="$GCP_PROJECT_ID" \
-                      --delete-tags \
-                      --quiet 2>/dev/null || true
+                  echo "$UNTAGGED" | while read -r img; do
+                    if [[ -n "$img" ]]; then
+                      gcloud artifacts docker images delete "$img" \
+                        --project="$GCP_PROJECT_ID" \
+                        --delete-tags \
+                        --quiet 2>/dev/null || true
+                    fi
                   done
                   TOTAL=$(( TOTAL + COUNT ))
                 fi

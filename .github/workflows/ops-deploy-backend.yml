@@ -80,7 +80,7 @@ jobs:
 
     steps:
       - name: Checkout platform repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Resolve manifest
         id: resolve
@@ -101,7 +101,7 @@ jobs:
 
     steps:
       - name: Checkout platform repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Resolve ref
         id: resolve
@@ -124,7 +124,7 @@ jobs:
 
     steps:
       - name: Checkout platform repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Resolve environment
         id: resolve

@@ -101,10 +101,10 @@ jobs:
 
     steps:
       - name: Checkout platform repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Checkout application source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ inputs.repository }}
           ref: ${{ inputs.ref }}
@@ -117,7 +117,7 @@ jobs:
           echo "artifact_name=firebase-bundle-${{ inputs.app_name }}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js ${{ inputs.node_version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node_version }}
           cache: npm
@@ -153,7 +153,7 @@ jobs:
           ${{ inputs.build_command }}
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.set_artifact.outputs.artifact_name }}
           # When app_root is set, upload from there (monorepo app dir).
@@ -177,10 +177,10 @@ jobs:
 
     steps:
       - name: Checkout platform repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ needs.build.outputs.artifact_name }}
           path: app-build

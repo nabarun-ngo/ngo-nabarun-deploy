@@ -60,7 +60,7 @@ jobs:
 
     steps:
       - name: Checkout platform repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Resolve profile
         id: resolve

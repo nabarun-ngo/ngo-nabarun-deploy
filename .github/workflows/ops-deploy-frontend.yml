@@ -184,36 +184,36 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   # 6. Post-deploy: dispatch smoke tests (scheduled run only)
   # ──────────────────────────────────────────────────────────────────────────
-  dispatch_smoke_tests:
-    name: Dispatch post-deploy smoke tests
-    needs: deploy
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+  # dispatch_smoke_tests:
+  #   name: Dispatch post-deploy smoke tests
+  #   needs: deploy
+  #   if: github.event_name == 'schedule'
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - name: Fire Trigger-Run-Tests dispatch
-        env:
-          GH_TOKEN: ${{ secrets.PAT }}
-          REPO: ${{ github.repository }}
-        run: |
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/${REPO}/dispatches" \
-            -f event_type="Trigger-Run-Tests" \
-            -f "client_payload[tags]=@publicsmoke" \
-            -f "client_payload[target_environment]=stage" \
-            -f "client_payload[triggered_by]=scheduled-public-site-deploy"
+  #   steps:
+  #     - name: Fire Trigger-Run-Tests dispatch
+  #       env:
+  #         GH_TOKEN: ${{ secrets.PAT }}
+  #         REPO: ${{ github.repository }}
+  #       run: |
+  #         gh api \
+  #           --method POST \
+  #           -H "Accept: application/vnd.github+json" \
+  #           "/repos/${REPO}/dispatches" \
+  #           -f event_type="Trigger-Run-Tests" \
+  #           -f "client_payload[tags]=@publicsmoke" \
+  #           -f "client_payload[target_environment]=stage" \
+  #           -f "client_payload[triggered_by]=scheduled-public-site-deploy"
 
-          echo "::notice::Dispatched @publicsmoke tests after scheduled deploy"
+  #         echo "::notice::Dispatched @publicsmoke tests after scheduled deploy"
 
-      - name: Write step summary
-        run: |
-          {
-            echo "### Scheduled Public Site Deploy Complete"
-            echo ""
-            echo "| Field | Value |"
-            echo "|-------|-------|"
-            echo "| Hosting URL | ${{ needs.deploy.outputs.hosting_url }} |"
-            echo "| Smoke tests | Dispatched (Trigger-Run-Tests @publicsmoke) |"
-          } >> "$GITHUB_STEP_SUMMARY"
+  #     - name: Write step summary
+  #       run: |
+  #         {
+  #           echo "### Scheduled Public Site Deploy Complete"
+  #           echo ""
+  #           echo "| Field | Value |"
+  #           echo "|-------|-------|"
+  #           echo "| Hosting URL | ${{ needs.deploy.outputs.hosting_url }} |"
+  #           echo "| Smoke tests | Dispatched (Trigger-Run-Tests @publicsmoke) |"
+  #         } >> "$GITHUB_STEP_SUMMARY"

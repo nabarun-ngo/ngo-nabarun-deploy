@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# EXAMPLE: CD tag + publish + release for an application repo.
+#
+# Drop this file into your application repository at:
+#   .github/workflows/cd.yml
+#
+# Triggers on push to main or stage (i.e. when a PR merges).
+# On stage: creates a beta tag (v1.x.x-beta.N) and dispatches a deploy.
+# On main:  creates a stable tag (v1.x.x) and creates a GitHub Release.
+#            Prod deploy is intentionally manual — run ops-deploy-backend.yml.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CD
+
+on:
+  push:
+    branches: [main, stage]
+
+jobs:
+  tag-and-release:
+    uses: YOUR_ORG/deploy-platform/.github/workflows/reusable-ci-tag-publish.yml@main
+    with:
+      source_branch: ${{ github.ref_name }}
+      node_version: '20'
+      monorepo_root: '.'
+      # Set to true if this repo publishes an npm package
+      publish_package: false
+      build_before_publish: true
+      build_command: 'npm run build'
+      publish_command: 'npm run release:publish'
+      # Auto-dispatch a deploy to stage when a beta tag is created
+      auto_deploy: true
+      deploy_ops_repo: YOUR_ORG/deploy-platform
+      deploy_manifest: backend
+      deploy_event_type: Trigger-Deploy-Backend
+      deploy_target_environment: stage
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

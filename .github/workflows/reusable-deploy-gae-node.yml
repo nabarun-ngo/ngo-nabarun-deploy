@@ -1,0 +1,395 @@
+name: Reusable — Deploy GAE Node.js
+
+on:
+  workflow_call:
+    inputs:
+      # ── Manifest-resolved fields ──────────────────────────────────────────
+      app_name:
+        type: string
+        required: true
+      repository:
+        type: string
+        required: true
+      build_root:
+        type: string
+        required: false
+        default: '.'
+      app_root:
+        description: >
+          Path to the app directory inside the source repo (relative to repo root).
+          When set, artifact is staged from <app_root>/<output_path>.
+          When omitted, staged from <build_root>/<output_path>.
+        type: string
+        required: false
+        default: ''
+      node_version:
+        type: string
+        required: false
+        default: '20'
+      install_command:
+        type: string
+        required: false
+        default: 'npm ci'
+      build_command:
+        type: string
+        required: true
+      output_path:
+        type: string
+        required: false
+        default: 'dist'
+      bundle_includes:
+        type: string
+        required: false
+        default: ''
+      config_template:
+        type: string
+        required: true
+      gae_service:
+        type: string
+        required: true
+      gae_instance_class:
+        description: App Engine instance class (e.g. F1, F2, B2). Defaults to F2.
+        type: string
+        required: false
+        default: 'F2'
+      gae_min_instances:
+        description: Minimum number of idle instances for automatic scaling. Defaults to 0.
+        type: string
+        required: false
+        default: '0'
+      gae_max_instances:
+        description: Maximum number of instances for automatic scaling. Defaults to 10.
+        type: string
+        required: false
+        default: '10'
+      db_migrate:
+        type: boolean
+        required: false
+        default: false
+      db_command:
+        type: string
+        required: false
+        default: ''
+      health_check_enabled:
+        type: boolean
+        required: false
+        default: false
+      health_check_path:
+        type: string
+        required: false
+        default: '/health'
+      health_check_url:
+        type: string
+        required: false
+        default: ''
+      doppler_bundle_cli:
+        type: boolean
+        required: false
+        default: false
+      doppler_project:
+        type: string
+        required: false
+        default: ''
+      doppler_config:
+        description: >
+          Doppler config name for this environment (e.g. stg, prd).
+          Resolved from environments[target].secrets.config in the manifest.
+          Falls back to target_environment when not provided.
+        type: string
+        required: false
+        default: ''
+      # ── Runtime fields ────────────────────────────────────────────────────
+      ref:
+        description: Git ref (tag or branch) to deploy.
+        type: string
+        required: true
+      github_environment:
+        description: GitHub Environment name (drives secret scoping + approval gate).
+        type: string
+        required: true
+      target_environment:
+        description: Logical environment label (stage | prod) — used for render-config vars.
+        type: string
+        required: true
+
+    secrets:
+      PAT:
+        required: true
+      GCP_PROJECT_ID:
+        required: true
+      GCP_SA_KEY:
+        required: true
+      DOPPLER_TOKEN:
+        required: false
+
+    outputs:
+      deploy_url:
+        description: Deployed App Engine service URL.
+        value: ${{ jobs.deploy.outputs.deploy_url }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Build
+  # ──────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build — ${{ inputs.app_name }}
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_name: ${{ steps.set_artifact.outputs.artifact_name }}
+
+    steps:
+      - name: Checkout platform repo (for actions + config)
+        uses: actions/checkout@v4
+
+      - name: Checkout application source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.PAT }}
+          path: app-source
+
+      - name: Set artifact name
+        id: set_artifact
+        run: |
+          echo "artifact_name=gae-bundle-${{ inputs.app_name }}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+
+      - name: Stage deploy bundle
+        uses: ./.github/actions/stage-node-artifact
+        with:
+          build_root: app-source/${{ inputs.build_root }}
+          app_root: ${{ inputs.app_root != '' && format('app-source/{0}', inputs.app_root) || '' }}
+          install_command: ${{ inputs.install_command }}
+          build_command: ${{ inputs.build_command }}
+          output_path: ${{ inputs.output_path }}
+          bundle_includes: ${{ inputs.bundle_includes }}
+          doppler_bundle_cli: ${{ inputs.doppler_bundle_cli }}
+          artifact_name: ${{ steps.set_artifact.outputs.artifact_name }}
+          node_version: ${{ inputs.node_version }}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Migrate (conditional — must complete before deploy)
+  # ──────────────────────────────────────────────────────────────────────────
+  migrate:
+    name: Database migrate — ${{ inputs.app_name }}
+    needs: build
+    if: ${{ inputs.db_migrate == true }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.github_environment }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Download deploy bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: deploy-bundle
+
+      - name: Setup Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Run database migration
+        working-directory: deploy-bundle
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_PROJECT: ${{ inputs.doppler_project }}
+          DOPPLER_CONFIG: ${{ inputs.doppler_config != '' && inputs.doppler_config || inputs.target_environment }}
+        run: |
+          set -euo pipefail
+
+          if [[ -f "bin/doppler" && -n "${DOPPLER_TOKEN:-}" ]]; then
+            echo "Running migration via Doppler CLI..."
+            ./bin/doppler run \
+              --project="$DOPPLER_PROJECT" \
+              --config="$DOPPLER_CONFIG" \
+              --token="$DOPPLER_TOKEN" \
+              -- ${{ inputs.db_command }}
+          else
+            echo "Running migration with ambient environment..."
+            ${{ inputs.db_command }}
+          fi
+
+      - name: Write step summary
+        if: always()
+        run: |
+          {
+            echo "### Database Migration"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Command | \`${{ inputs.db_command }}\` |"
+            echo "| Status | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. Deploy — no-promote → health check → promote traffic
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy GAE — ${{ inputs.app_name }}
+    needs: [build, migrate]
+    # Run if build succeeded AND either migration was skipped or it succeeded
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.github_environment }}
+      url: ${{ steps.promote.outputs.deploy_url }}
+    outputs:
+      deploy_url: ${{ steps.promote.outputs.deploy_url }}
+      new_version: ${{ steps.deploy_version.outputs.version_id }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Download deploy bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: deploy-bundle
+
+      - name: Render app.yaml from template
+        uses: ./.github/actions/render-config
+        with:
+          template_path: ${{ inputs.config_template }}
+          output_path: deploy-bundle/app.yaml
+          variables: |
+            GAE_SERVICE=${{ inputs.gae_service }}
+            GAE_INSTANCE_CLASS=${{ inputs.gae_instance_class }}
+            GAE_MIN_INSTANCES=${{ inputs.gae_min_instances }}
+            GAE_MAX_INSTANCES=${{ inputs.gae_max_instances }}
+            DEPLOY_ENV=${{ inputs.target_environment }}
+            DOPPLER_PROJECT=${{ inputs.doppler_project }}
+            DOPPLER_CONFIG=${{ inputs.doppler_config }}
+          strict: 'false'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Inject DOPPLER_TOKEN into app.yaml
+        if: ${{ inputs.doppler_bundle_cli == true }}
+        working-directory: deploy-bundle
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          # Append DOPPLER_TOKEN to env_variables in app.yaml at deploy time
+          # Token is NOT stored in git; only injected into the ephemeral deploy artifact
+          cat >> app.yaml <<EOF
+            DOPPLER_TOKEN: "$DOPPLER_TOKEN"
+          EOF
+
+      - name: Deploy to GAE (no-promote)
+        id: deploy_version
+        working-directory: deploy-bundle
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+
+          VERSION_ID="run-${{ github.run_id }}"
+          echo "::notice::Deploying version $VERSION_ID to service ${{ inputs.gae_service }}"
+
+          gcloud app deploy app.yaml \
+            --project="$GCP_PROJECT_ID" \
+            --version="$VERSION_ID" \
+            --no-promote \
+            --quiet
+
+          echo "version_id=$VERSION_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Health check new version
+        if: ${{ inputs.health_check_enabled == true }}
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          VERSION_ID: ${{ steps.deploy_version.outputs.version_id }}
+          GAE_SERVICE: ${{ inputs.gae_service }}
+          HC_PATH: ${{ inputs.health_check_path }}
+          HC_URL_OVERRIDE: ${{ inputs.health_check_url }}
+          HC_TIMEOUT: '120'
+        run: |
+          set -euo pipefail
+
+          # Use manifest-supplied URL override when available; otherwise derive from GAE API
+          if [[ -n "$HC_URL_OVERRIDE" ]]; then
+            HC_URL="$HC_URL_OVERRIDE"
+          else
+            VERSION_URL=$(gcloud app versions describe "$VERSION_ID" \
+              --service="$GAE_SERVICE" \
+              --project="$GCP_PROJECT_ID" \
+              --format='value(versionUrl)' 2>/dev/null || true)
+
+            if [[ -z "$VERSION_URL" ]]; then
+              echo "::warning::Could not determine versioned URL; skipping health check."
+              exit 0
+            fi
+
+            HC_URL="${VERSION_URL}${HC_PATH}"
+          fi
+
+          echo "::notice::Health checking: $HC_URL (timeout ${HC_TIMEOUT}s)"
+
+          ELAPSED=0
+          while (( ELAPSED < HC_TIMEOUT )); do
+            HTTP_STATUS=$(curl -sf -o /dev/null -w '%{http_code}' "$HC_URL" 2>/dev/null || echo "000")
+            if [[ "$HTTP_STATUS" == "200" ]]; then
+              echo "::notice::Health check passed (HTTP $HTTP_STATUS)"
+              exit 0
+            fi
+            echo "Waiting for $HC_URL (HTTP $HTTP_STATUS)..."
+            sleep 10
+            (( ELAPSED += 10 ))
+          done
+
+          echo "::error::Health check timed out after ${HC_TIMEOUT}s. Last HTTP status: $HTTP_STATUS"
+          exit 1
+
+      - name: Promote traffic to new version
+        id: promote
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          VERSION_ID: ${{ steps.deploy_version.outputs.version_id }}
+          GAE_SERVICE: ${{ inputs.gae_service }}
+        run: |
+          set -euo pipefail
+
+          gcloud app services set-traffic "$GAE_SERVICE" \
+            --splits "$VERSION_ID=1" \
+            --project="$GCP_PROJECT_ID" \
+            --quiet
+
+          DEPLOY_URL="https://$GAE_SERVICE-dot-${{ secrets.GCP_PROJECT_ID }}.uc.r.appspot.com"
+          echo "deploy_url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
+          echo "::notice::Traffic promoted to $VERSION_ID — $DEPLOY_URL"
+
+      - name: Write step summary
+        if: always()
+        run: |
+          {
+            echo "### GAE Deploy — ${{ inputs.app_name }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| App | \`${{ inputs.app_name }}\` |"
+            echo "| Service | \`${{ inputs.gae_service }}\` |"
+            echo "| Version | \`${{ steps.deploy_version.outputs.version_id }}\` |"
+            echo "| Source ref | \`${{ inputs.ref }}\` |"
+            echo "| Environment | \`${{ inputs.github_environment }}\` |"
+            echo "| Deploy URL | ${{ steps.promote.outputs.deploy_url }} |"
+            echo "| Status | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

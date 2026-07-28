@@ -1,0 +1,234 @@
+name: Reusable — Deploy Firebase Node.js
+
+on:
+  workflow_call:
+    inputs:
+      # ── Manifest-resolved fields ──────────────────────────────────────────
+      app_name:
+        type: string
+        required: true
+      repository:
+        type: string
+        required: true
+      build_root:
+        type: string
+        required: false
+        default: '.'
+      app_root:
+        description: >
+          Path to the app directory inside the source repo (relative to repo root).
+          When set, artifact is staged from <app_root>/<output_path>.
+          When omitted, staged from <build_root>/<output_path>.
+        type: string
+        required: false
+        default: ''
+      node_version:
+        type: string
+        required: false
+        default: '20'
+      install_command:
+        type: string
+        required: false
+        default: 'npm ci'
+      build_command:
+        type: string
+        required: true
+      output_path:
+        type: string
+        required: false
+        default: 'dist'
+      config_template:
+        type: string
+        required: true
+      secrets_provider:
+        type: string
+        required: false
+        default: 'none'
+      doppler_project:
+        type: string
+        required: false
+        default: ''
+      doppler_config:
+        type: string
+        required: false
+        default: ''
+      # ── Runtime fields ────────────────────────────────────────────────────
+      ref:
+        description: Git ref (tag or branch) to deploy.
+        type: string
+        required: true
+      github_environment:
+        description: GitHub Environment name.
+        type: string
+        required: true
+      target_environment:
+        description: Logical environment (stage | prod) — used for config template resolution.
+        type: string
+        required: true
+
+    secrets:
+      PAT:
+        required: true
+      FB_PROJECT_ID:
+        required: true
+      FB_SA_KEY:
+        required: true
+      DOPPLER_TOKEN:
+        required: false
+
+    outputs:
+      hosting_url:
+        description: Firebase Hosting URL for the deployed channel.
+        value: ${{ jobs.deploy.outputs.hosting_url }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Build (with optional Doppler secret injection for Next.js/Angular env vars)
+  # ──────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build — ${{ inputs.app_name }}
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_name: ${{ steps.set_artifact.outputs.artifact_name }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Checkout application source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.PAT }}
+          path: app-source
+
+      - name: Set artifact name
+        id: set_artifact
+        run: |
+          echo "artifact_name=firebase-bundle-${{ inputs.app_name }}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: app-source/${{ inputs.build_root }}/package-lock.json
+
+      - name: Install dependencies
+        if: ${{ inputs.secrets_provider != 'doppler' }}
+        working-directory: app-source/${{ inputs.build_root }}
+        run: ${{ inputs.install_command }}
+
+      - name: Install Doppler CLI
+        if: ${{ inputs.secrets_provider == 'doppler' }}
+        uses: dopplerhq/cli-action@v3
+
+      - name: Build (with Doppler secret injection)
+        if: ${{ inputs.secrets_provider == 'doppler' }}
+        working-directory: app-source/${{ inputs.build_root }}
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          ${{ inputs.install_command }}
+          doppler run \
+            --project="${{ inputs.doppler_project }}" \
+            --config="${{ inputs.doppler_config }}" \
+            --token="$DOPPLER_TOKEN" \
+            -- ${{ inputs.build_command }}
+
+      - name: Build (without Doppler)
+        if: ${{ inputs.secrets_provider != 'doppler' }}
+        working-directory: app-source/${{ inputs.build_root }}
+        run: |
+          ${{ inputs.install_command }}
+          ${{ inputs.build_command }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.set_artifact.outputs.artifact_name }}
+          # When app_root is set, upload from there (monorepo app dir).
+          # When not set, upload from build_root (single-app repo).
+          path: ${{ inputs.app_root != '' && format('app-source/{0}', inputs.app_root) || format('app-source/{0}', inputs.build_root) }}/
+          retention-days: 1
+          if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Deploy
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy Firebase — ${{ inputs.app_name }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.github_environment }}
+      url: ${{ steps.firebase_deploy.outputs.details_url }}
+    outputs:
+      hosting_url: ${{ steps.firebase_deploy.outputs.details_url }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: app-build
+
+      - name: Resolve build output path for firebase.json
+        id: output_path
+        run: |
+          # BUILD_OUTPUT_PATH is the path firebase.json's "public" key points to.
+          # It must be relative to where firebase deploy runs (app-build/).
+          # Since we uploaded the artifact from app_root (or build_root), the
+          # output_path is already relative to that root.
+          echo "path=${{ inputs.output_path }}" >> "$GITHUB_OUTPUT"
+
+      - name: Render firebase.json from template
+        uses: ./.github/actions/render-config
+        with:
+          template_path: ${{ inputs.config_template }}
+          output_path: app-build/firebase.json
+          variables: |
+            DEPLOY_ENV=${{ inputs.target_environment }}
+            FB_SITE_STAGE=${{ secrets.FB_PROJECT_ID }}-staging
+            FB_SITE_PROD=${{ secrets.FB_PROJECT_ID }}
+            BUILD_OUTPUT_PATH=${{ inputs.output_path }}
+          strict: 'false'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FB_SA_KEY }}
+
+      - name: Deploy to Firebase Hosting
+        id: firebase_deploy
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ github.token }}
+          firebaseServiceAccount: ${{ secrets.FB_SA_KEY }}
+          projectId: ${{ secrets.FB_PROJECT_ID }}
+          target: ${{ inputs.target_environment }}
+          channelId: live
+          entryPoint: app-build
+
+      - name: Write step summary
+        if: always()
+        run: |
+          {
+            echo "### Firebase Deploy — ${{ inputs.app_name }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| App | \`${{ inputs.app_name }}\` |"
+            echo "| Source ref | \`${{ inputs.ref }}\` |"
+            echo "| Environment | \`${{ inputs.github_environment }}\` |"
+            echo "| Hosting URL | ${{ steps.firebase_deploy.outputs.details_url }} |"
+            echo "| Status | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

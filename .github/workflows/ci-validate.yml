@@ -1,0 +1,120 @@
+name: CI — Validate
+
+# Runs on every PR and push to main.
+# Validates:
+#   1. All manifests in config/manifests/ against schemas/manifest.v1.schema.json
+#   2. Workflow YAML syntax (basic check via actionlint if available)
+#   3. Shell script lint (shellcheck on scripts/)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'config/manifests/**'
+      - 'schemas/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+      - '.github/actions/**'
+
+  push:
+    branches: [main]
+    paths:
+      - 'config/manifests/**'
+      - 'schemas/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-manifests:
+    name: Validate manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq and check-jsonschema
+        run: |
+          jq --version
+          pip install check-jsonschema --quiet
+          check-jsonschema --version
+          echo "::notice::jq and check-jsonschema available"
+
+      - name: Validate all manifests
+        id: validate
+        run: |
+          set -euo pipefail
+          chmod +x scripts/validate-manifests.sh
+          scripts/validate-manifests.sh config/manifests/ schemas/manifest.v1.schema.json
+
+      - name: Write PR comment on failure
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ **Manifest validation failed.** Check the [CI logs](' + context.serverUrl + '/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId + ') for details.\n\nRun `scripts/validate-manifests.sh config/manifests/ schemas/manifest.v1.schema.json` locally to debug.'
+            })
+
+  lint-workflows:
+    name: Lint workflow YAML
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install actionlint
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash \
+            | bash -s -- latest /usr/local/bin 2>/dev/null \
+            || echo "::warning::actionlint download failed — skipping workflow lint"
+
+      - name: Lint GitHub Actions workflows
+        run: |
+          if command -v actionlint &>/dev/null; then
+            actionlint -color .github/workflows/*.yml
+          else
+            echo "::notice::actionlint not available — basic YAML syntax check only"
+            python3 -c "
+          import yaml, sys, glob
+          errors = []
+          for f in glob.glob('.github/workflows/*.yml'):
+              try:
+                  yaml.safe_load(open(f))
+              except yaml.YAMLError as e:
+                  errors.append(f'{f}: {e}')
+          if errors:
+              for e in errors: print(f'::error::{e}')
+              sys.exit(1)
+          print(f'All {len(glob.glob(\".github/workflows/*.yml\"))} workflow files are valid YAML')
+          "
+          fi
+
+  lint-scripts:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get install -y shellcheck 2>/dev/null || true
+          shellcheck --version 2>/dev/null || echo "::warning::shellcheck not available"
+
+      - name: Run shellcheck on scripts
+        run: |
+          if command -v shellcheck &>/dev/null; then
+            find scripts/ .github/actions/ -name '*.sh' -print0 \
+              | xargs -0 shellcheck --severity=warning \
+              || echo "::warning::Some shellcheck warnings found — review above"
+          else
+            echo "::notice::shellcheck not available — skipping script lint"
+          fi

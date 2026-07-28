@@ -1,0 +1,166 @@
+name: Reusable — CI PR Check
+
+# Called by application repos on pull_request events.
+# Runs install → type-check → lint → build → (optional) unit tests.
+# The 'ci/build' commit status posted here is the required status check
+# that branch protection enforces before merging.
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: Node.js version to use.
+        type: string
+        required: false
+        default: '20'
+      build_root:
+        description: Working directory for all commands (relative to repo root).
+        type: string
+        required: false
+        default: '.'
+      install_command:
+        description: Dependency install command.
+        type: string
+        required: false
+        default: 'npm ci'
+      build_command:
+        description: Build command.
+        type: string
+        required: false
+        default: 'npm run build'
+      lint_command:
+        description: Lint command. Skipped gracefully if the npm script is not defined.
+        type: string
+        required: false
+        default: 'npm run lint'
+      type_check_command:
+        description: Type-check command. Skipped gracefully if the npm script is not defined.
+        type: string
+        required: false
+        default: 'npm run type-check'
+      enable_tests:
+        description: Whether to run unit tests in this check.
+        type: boolean
+        required: false
+        default: false
+      test_command:
+        description: Unit test command (used when enable_tests is true).
+        type: string
+        required: false
+        default: 'npm test'
+      upload_coverage:
+        description: Upload coverage reports as an artifact.
+        type: boolean
+        required: false
+        default: false
+      coverage_path:
+        description: Path to coverage output directory (relative to build_root).
+        type: string
+        required: false
+        default: 'coverage'
+
+    outputs:
+      build_status:
+        description: '"success" or "failure"'
+        value: ${{ jobs.check.outputs.build_status }}
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  check:
+    name: Build check
+    runs-on: ubuntu-latest
+    outputs:
+      build_status: ${{ steps.result.outputs.build_status }}
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.build_root }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.build_root }}
+        run: ${{ inputs.install_command }}
+
+      - name: Type check
+        id: type_check
+        working-directory: ${{ inputs.build_root }}
+        run: |
+          # Extract script name from command (e.g. "npm run type-check" → "type-check")
+          SCRIPT=$(echo "${{ inputs.type_check_command }}" | sed 's/npm run //')
+          if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['$SCRIPT'] ? 0 : 1)" 2>/dev/null; then
+            ${{ inputs.type_check_command }}
+          else
+            echo "::notice::Type-check script '$SCRIPT' not found in package.json, skipping."
+          fi
+
+      - name: Lint
+        id: lint
+        working-directory: ${{ inputs.build_root }}
+        run: |
+          SCRIPT=$(echo "${{ inputs.lint_command }}" | sed 's/npm run //')
+          if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['$SCRIPT'] ? 0 : 1)" 2>/dev/null; then
+            ${{ inputs.lint_command }}
+          else
+            echo "::notice::Lint script '$SCRIPT' not found in package.json, skipping."
+          fi
+
+      - name: Build
+        id: build
+        working-directory: ${{ inputs.build_root }}
+        run: ${{ inputs.build_command }}
+
+      - name: Unit tests
+        id: tests
+        if: ${{ inputs.enable_tests == true }}
+        working-directory: ${{ inputs.build_root }}
+        run: ${{ inputs.test_command }}
+
+      - name: Upload coverage artifact
+        if: ${{ inputs.upload_coverage == true && inputs.enable_tests == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: ${{ inputs.build_root }}/${{ inputs.coverage_path }}
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Resolve build result
+        id: result
+        if: always()
+        run: |
+          if [[ "${{ steps.build.outcome }}" == "success" ]]; then
+            echo "build_status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_status=failure" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write step summary
+        if: always()
+        run: |
+          {
+            echo "### CI Build Check"
+            echo ""
+            echo "| Step | Status |"
+            echo "|------|--------|"
+            echo "| Install | ${{ steps.build.outcome != 'skipped' && '✅' || '⏭' }} |"
+            echo "| Type check | ${{ steps.type_check.outcome }} |"
+            echo "| Lint | ${{ steps.lint.outcome }} |"
+            echo "| Build | ${{ steps.build.outcome }} |"
+            if [[ "${{ inputs.enable_tests }}" == "true" ]]; then
+              echo "| Unit tests | ${{ steps.tests.outcome }} |"
+            fi
+            echo ""
+            echo "**Ref:** \`${{ github.sha }}\` on \`${{ github.head_ref }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

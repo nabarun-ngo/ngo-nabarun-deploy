@@ -1,0 +1,68 @@
+{
+  "$comment": [
+    "Example: Node.js backend deployed to Google App Engine.",
+    "",
+    "Single-app repo:  omit appRoot — output staged from buildRoot/outputPath.",
+    "Monorepo:         set appRoot to the app directory (e.g. 'apps/api') —",
+    "                  install/build runs from buildRoot (workspace root),",
+    "                  output staged from appRoot/outputPath.",
+    "",
+    "No 'layout' flag needed — the platform infers behaviour from appRoot presence."
+  ],
+  "apiVersion": "deploy.platform/v1",
+  "kind": "Application",
+  "metadata": {
+    "name": "backend-api",
+    "description": "Node.js REST API deployed to Google App Engine.",
+    "labels": {
+      "team": "platform",
+      "tier": "backend"
+    }
+  },
+  "source": {
+    "repository": "YOUR_ORG/backend-repo",
+    "buildRoot": ".",
+    "appRoot": "apps/api"
+  },
+  "build": {
+    "runtime": "node",
+    "nodeVersion": "20",
+    "install": "npm ci",
+    "command": "npm run build --workspace=apps/api",
+    "outputPath": "dist",
+    "bundleIncludes": ["prisma"]
+  },
+  "deploy": {
+    "platform": "gae",
+    "configTemplate": "config/platforms/gae/app.yaml.tpl",
+    "serviceKey": "gaeService",
+    "secrets": {
+      "provider": "doppler",
+      "project": "backend-api",
+      "bundleCli": true
+    }
+  },
+  "database": {
+    "migrate": true,
+    "command": "npx prisma migrate deploy"
+  },
+  "healthCheck": {
+    "enabled": true,
+    "path": "/health",
+    "timeoutSeconds": 120
+  },
+  "environments": {
+    "stage": {
+      "sourceRef": "stage",
+      "gaeService": "api-staging",
+      "secrets": { "config": "stg" },
+      "healthCheckUrl": "https://api-staging-dot-my-project-stage.uc.r.appspot.com/health"
+    },
+    "prod": {
+      "sourceRef": "main",
+      "gaeService": "api",
+      "secrets": { "config": "prd" },
+      "healthCheckUrl": "https://api-dot-my-project-prod.uc.r.appspot.com/health"
+    }
+  }
+}

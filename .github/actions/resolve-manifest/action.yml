@@ -1,0 +1,220 @@
+name: Resolve Manifest
+description: >
+  Load a manifest JSON by name from config/manifests/, validate it against
+  the v1 schema, and emit a flat set of outputs for the calling job.
+  Also emits Doppler fields when deploy.secrets.provider == "doppler".
+
+inputs:
+  manifest_name:
+    description: >
+      Manifest filename without .json extension (e.g. 'backend').
+      File must exist at config/manifests/<name>.json.
+    required: true
+  target_environment:
+    description: >
+      Logical environment to deploy to (e.g. 'stage', 'prod').
+      Must match a key in the manifest's environments block.
+    required: true
+
+outputs:
+  app_name:
+    description: metadata.name
+    value: ${{ steps.parse.outputs.app_name }}
+  repository:
+    description: source.repository
+    value: ${{ steps.parse.outputs.repository }}
+  build_root:
+    description: source.buildRoot
+    value: ${{ steps.parse.outputs.build_root }}
+  app_root:
+    description: source.appRoot (monorepo only)
+    value: ${{ steps.parse.outputs.app_root }}
+  workspace_packages:
+    description: source.workspacePackages (monorepo only)
+    value: ${{ steps.parse.outputs.workspace_packages }}
+  node_version:
+    description: build.nodeVersion
+    value: ${{ steps.parse.outputs.node_version }}
+  install_command:
+    description: build.install
+    value: ${{ steps.parse.outputs.install_command }}
+  build_command:
+    description: build.command
+    value: ${{ steps.parse.outputs.build_command }}
+  output_path:
+    description: build.outputPath
+    value: ${{ steps.parse.outputs.output_path }}
+  bundle_includes:
+    description: build.bundleIncludes as comma-separated string
+    value: ${{ steps.parse.outputs.bundle_includes }}
+  platform:
+    description: deploy.platform (gae | firebase)
+    value: ${{ steps.parse.outputs.platform }}
+  config_template:
+    description: deploy.configTemplate
+    value: ${{ steps.parse.outputs.config_template }}
+  service_key:
+    description: deploy.serviceKey
+    value: ${{ steps.parse.outputs.service_key }}
+  gae_service:
+    description: environments[target].{serviceKey} resolved value
+    value: ${{ steps.parse.outputs.gae_service }}
+  source_ref:
+    description: environments[target].sourceRef
+    value: ${{ steps.parse.outputs.source_ref }}
+  db_migrate:
+    description: database.migrate (true | false)
+    value: ${{ steps.parse.outputs.db_migrate }}
+  db_command:
+    description: database.command
+    value: ${{ steps.parse.outputs.db_command }}
+  health_check_enabled:
+    description: healthCheck.enabled
+    value: ${{ steps.parse.outputs.health_check_enabled }}
+  health_check_path:
+    description: healthCheck.path
+    value: ${{ steps.parse.outputs.health_check_path }}
+  health_check_url:
+    description: environments[target].healthCheckUrl
+    value: ${{ steps.parse.outputs.health_check_url }}
+  secrets_provider:
+    description: deploy.secrets.provider (none | doppler)
+    value: ${{ steps.parse.outputs.secrets_provider }}
+  doppler_project:
+    description: deploy.secrets.project (when provider == doppler)
+    value: ${{ steps.parse.outputs.doppler_project }}
+  doppler_bundle_cli:
+    description: deploy.secrets.bundleCli (true | false)
+    value: ${{ steps.parse.outputs.doppler_bundle_cli }}
+  doppler_config:
+    description: environments[target].secrets.config (Doppler config name for this env)
+    value: ${{ steps.parse.outputs.doppler_config }}
+  manifest_json:
+    description: Full manifest JSON (for debug/audit)
+    value: ${{ steps.parse.outputs.manifest_json }}
+
+runs:
+  using: composite
+  steps:
+    - name: Parse and validate manifest
+      id: parse
+      shell: bash
+      env:
+        MANIFEST_NAME: ${{ inputs.manifest_name }}
+        TARGET_ENV: ${{ inputs.target_environment }}
+      run: |
+        set -euo pipefail
+
+        MANIFEST_FILE="config/manifests/${MANIFEST_NAME}.json"
+
+        if [[ ! -f "$MANIFEST_FILE" ]]; then
+          echo "::error::Manifest file not found: $MANIFEST_FILE"
+          echo "::error::Available manifests:"
+          ls config/manifests/ | sed 's/\.json//' | while read m; do echo "  - $m"; done
+          exit 1
+        fi
+
+        MANIFEST=$(cat "$MANIFEST_FILE")
+
+        # Validate apiVersion
+        API_VERSION=$(echo "$MANIFEST" | jq -r '.apiVersion // empty')
+        if [[ "$API_VERSION" != "deploy.platform/v1" ]]; then
+          echo "::error::Invalid apiVersion: '$API_VERSION'. Expected 'deploy.platform/v1'."
+          exit 1
+        fi
+
+        # Validate target environment exists
+        ENV_BLOCK=$(echo "$MANIFEST" | jq -r --arg env "$TARGET_ENV" '.environments[$env] // empty')
+        if [[ -z "$ENV_BLOCK" ]]; then
+          AVAILABLE=$(echo "$MANIFEST" | jq -r '.environments | keys | join(", ")')
+          echo "::error::Environment '$TARGET_ENV' not found in manifest. Available: $AVAILABLE"
+          exit 1
+        fi
+
+        # --- Extract flat outputs ---
+        APP_NAME=$(echo "$MANIFEST"    | jq -r '.metadata.name')
+        REPOSITORY=$(echo "$MANIFEST"  | jq -r '.source.repository')
+        BUILD_ROOT=$(echo "$MANIFEST"  | jq -r '.source.buildRoot // "."')
+        APP_ROOT=$(echo "$MANIFEST"    | jq -r '.source.appRoot // ""')
+        WS_PKG=$(echo "$MANIFEST"      | jq -r '.source.workspacePackages // ""')
+
+        NODE_VERSION=$(echo "$MANIFEST" | jq -r '.build.nodeVersion // "20"')
+        INSTALL_CMD=$(echo "$MANIFEST"  | jq -r '.build.install // "npm ci"')
+        BUILD_CMD=$(echo "$MANIFEST"    | jq -r '.build.command')
+        OUTPUT_PATH=$(echo "$MANIFEST"  | jq -r '.build.outputPath // "dist"')
+        BUNDLE_INC=$(echo "$MANIFEST"   | jq -r '.build.bundleIncludes // [] | join(",")')
+
+        PLATFORM=$(echo "$MANIFEST"     | jq -r '.deploy.platform')
+        CFG_TPL=$(echo "$MANIFEST"      | jq -r '.deploy.configTemplate // ""')
+        SVC_KEY=$(echo "$MANIFEST"      | jq -r '.deploy.serviceKey // ""')
+
+        # Resolve GAE service name via serviceKey indirection
+        GAE_SERVICE=""
+        if [[ -n "$SVC_KEY" ]]; then
+          GAE_SERVICE=$(echo "$ENV_BLOCK" | jq -r --arg key "$SVC_KEY" '.[$key] // ""')
+        fi
+
+        SOURCE_REF=$(echo "$ENV_BLOCK"      | jq -r '.sourceRef')
+        DB_MIGRATE=$(echo "$MANIFEST"       | jq -r '.database.migrate // false')
+        DB_CMD=$(echo "$MANIFEST"           | jq -r '.database.command // ""')
+        HC_ENABLED=$(echo "$MANIFEST"       | jq -r '.healthCheck.enabled // false')
+        HC_PATH=$(echo "$MANIFEST"          | jq -r '.healthCheck.path // "/health"')
+        HC_URL=$(echo "$ENV_BLOCK"          | jq -r '.healthCheckUrl // ""')
+
+        SECRETS_PROVIDER=$(echo "$MANIFEST"  | jq -r '.deploy.secrets.provider // "none"')
+        DOPPLER_PROJECT=$(echo "$MANIFEST"   | jq -r '.deploy.secrets.project // ""')
+        DOPPLER_BUNDLE=$(echo "$MANIFEST"    | jq -r '.deploy.secrets.bundleCli // false')
+        DOPPLER_CONFIG=$(echo "$ENV_BLOCK"   | jq -r '.secrets.config // ""')
+
+        # Emit outputs
+        {
+          echo "app_name=$APP_NAME"
+          echo "repository=$REPOSITORY"
+          echo "build_root=$BUILD_ROOT"
+          echo "app_root=$APP_ROOT"
+          echo "workspace_packages=$WS_PKG"
+          echo "node_version=$NODE_VERSION"
+          echo "install_command=$INSTALL_CMD"
+          echo "build_command=$BUILD_CMD"
+          echo "output_path=$OUTPUT_PATH"
+          echo "bundle_includes=$BUNDLE_INC"
+          echo "platform=$PLATFORM"
+          echo "config_template=$CFG_TPL"
+          echo "service_key=$SVC_KEY"
+          echo "gae_service=$GAE_SERVICE"
+          echo "source_ref=$SOURCE_REF"
+          echo "db_migrate=$DB_MIGRATE"
+          echo "db_command=$DB_CMD"
+          echo "health_check_enabled=$HC_ENABLED"
+          echo "health_check_path=$HC_PATH"
+          echo "health_check_url=$HC_URL"
+          echo "secrets_provider=$SECRETS_PROVIDER"
+          echo "doppler_project=$DOPPLER_PROJECT"
+          echo "doppler_bundle_cli=$DOPPLER_BUNDLE"
+          echo "doppler_config=$DOPPLER_CONFIG"
+          # Emit full manifest for audit (single-line JSON)
+          printf "manifest_json=%s\n" "$(echo "$MANIFEST" | jq -c .)"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "::notice::Manifest '$MANIFEST_NAME' resolved for environment '$TARGET_ENV' (platform: $PLATFORM)"
+
+    - name: Write step summary
+      shell: bash
+      run: |
+        {
+          echo "### Manifest: \`${{ inputs.manifest_name }}\` → \`${{ inputs.target_environment }}\`"
+          echo ""
+          echo "| Field | Value |"
+          echo "|-------|-------|"
+          echo "| App | \`${{ steps.parse.outputs.app_name }}\` |"
+          echo "| Repository | \`${{ steps.parse.outputs.repository }}\` |"
+          echo "| Platform | \`${{ steps.parse.outputs.platform }}\` |"
+          echo "| Build root | \`${{ steps.parse.outputs.build_root }}\` |"
+          echo "| App root | \`${{ steps.parse.outputs.app_root }}\` |"
+          echo "| Source ref | \`${{ steps.parse.outputs.source_ref }}\` |"
+          echo "| GAE service | \`${{ steps.parse.outputs.gae_service }}\` |"
+          echo "| DB migrate | ${{ steps.parse.outputs.db_migrate }} |"
+          echo "| Secrets provider | \`${{ steps.parse.outputs.secrets_provider }}\` |"
+          echo "| Doppler project | \`${{ steps.parse.outputs.doppler_project }}\` |"
+          echo "| Doppler config | \`${{ steps.parse.outputs.doppler_config }}\` |"
+        } >> "$GITHUB_STEP_SUMMARY"

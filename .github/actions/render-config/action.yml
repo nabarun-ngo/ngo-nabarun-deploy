@@ -1,0 +1,90 @@
+name: Render Config
+description: >
+  Render a template file by substituting ${VARIABLE} placeholders using envsubst.
+  Fails fast if the template is missing or any required variable is unset.
+  Designed for rendering app.yaml.tpl and firebase.json templates at deploy time.
+
+inputs:
+  template_path:
+    description: Path to the template file (e.g. config/platforms/gae/app.yaml.tpl).
+    required: true
+  output_path:
+    description: Path where the rendered output file will be written.
+    required: true
+  variables:
+    description: >
+      Newline-delimited list of VARIABLE=VALUE pairs to inject during rendering.
+      Secret values should be passed via the calling workflow's env block, not here.
+    required: false
+    default: ''
+  strict:
+    description: >
+      If 'true', fail if any ${VARIABLE} placeholder remains unsubstituted in the output.
+    required: false
+    default: 'true'
+
+outputs:
+  output_path:
+    description: Path to the rendered output file.
+    value: ${{ steps.render.outputs.output_path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Render template
+      id: render
+      shell: bash
+      env:
+        TEMPLATE_PATH: ${{ inputs.template_path }}
+        OUTPUT_PATH: ${{ inputs.output_path }}
+        EXTRA_VARS: ${{ inputs.variables }}
+        STRICT: ${{ inputs.strict }}
+      run: |
+        set -euo pipefail
+
+        if [[ ! -f "$TEMPLATE_PATH" ]]; then
+          echo "::error::Template file not found: $TEMPLATE_PATH"
+          exit 1
+        fi
+
+        # Export any extra variables provided as input
+        if [[ -n "$EXTRA_VARS" ]]; then
+          while IFS= read -r line; do
+            # Skip empty lines and comments
+            [[ -z "$line" || "$line" == \#* ]] && continue
+            export "$line"
+          done <<< "$EXTRA_VARS"
+        fi
+
+        # Create output directory if needed
+        OUTPUT_DIR=$(dirname "$OUTPUT_PATH")
+        mkdir -p "$OUTPUT_DIR"
+
+        # Run envsubst — substitutes only variables present in the environment
+        envsubst < "$TEMPLATE_PATH" > "$OUTPUT_PATH"
+
+        # Strict mode: detect any remaining ${...} placeholders
+        if [[ "$STRICT" == "true" ]]; then
+          UNRESOLVED=$(grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*\}' "$OUTPUT_PATH" || true)
+          if [[ -n "$UNRESOLVED" ]]; then
+            echo "::error::Unresolved template variables in $OUTPUT_PATH:"
+            echo "$UNRESOLVED" | sort -u | while read v; do echo "  $v"; done
+            exit 1
+          fi
+        fi
+
+        echo "output_path=$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
+        echo "::notice::Template rendered: $TEMPLATE_PATH → $OUTPUT_PATH"
+
+    - name: Write step summary
+      shell: bash
+      run: |
+        {
+          echo "### Config Rendered"
+          echo ""
+          echo "| Field | Value |"
+          echo "|-------|-------|"
+          echo "| Template | \`${{ inputs.template_path }}\` |"
+          echo "| Output | \`${{ inputs.output_path }}\` |"
+          echo "| Strict mode | ${{ inputs.strict }} |"
+        } >> "$GITHUB_STEP_SUMMARY"

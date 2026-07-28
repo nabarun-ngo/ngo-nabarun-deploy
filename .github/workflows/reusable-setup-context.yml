@@ -1,0 +1,148 @@
+name: Reusable — Setup Context
+
+on:
+  workflow_call:
+    inputs:
+      manifest_name:
+        description: Manifest name (filename without .json) to deploy.
+        type: string
+        required: false
+        default: ''
+      target_environment:
+        description: Logical environment (stage | prod).
+        type: string
+        required: false
+        default: 'stage'
+      tag_name:
+        description: Git tag to deploy. Pass 'latest' to auto-resolve from target branch.
+        type: string
+        required: false
+        default: 'latest'
+      workflow_type:
+        description: 'deploy | tests — used for environment routing.'
+        type: string
+        required: false
+        default: 'deploy'
+      schedule_profile_id:
+        description: >
+          ID from config/schedules/tests.json (only set when triggered by cron).
+          Overrides manifest_name and target_environment when provided.
+        type: string
+        required: false
+        default: ''
+
+    outputs:
+      trigger_type:
+        description: How this workflow was triggered (schedule | workflow_dispatch | repository_dispatch).
+        value: ${{ jobs.setup.outputs.trigger_type }}
+      manifest_name:
+        description: Resolved manifest name.
+        value: ${{ jobs.setup.outputs.manifest_name }}
+      target_environment:
+        description: Resolved logical environment.
+        value: ${{ jobs.setup.outputs.target_environment }}
+      tag_name:
+        description: Resolved tag name (may be 'latest').
+        value: ${{ jobs.setup.outputs.tag_name }}
+      approval_mode:
+        description: '"auto" for scheduled runs, "manual" for dispatch/manual runs.'
+        value: ${{ jobs.setup.outputs.approval_mode }}
+      workflow_type:
+        description: 'deploy | tests'
+        value: ${{ jobs.setup.outputs.workflow_type }}
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Resolve workflow context
+    runs-on: ubuntu-latest
+    outputs:
+      trigger_type: ${{ steps.ctx.outputs.trigger_type }}
+      manifest_name: ${{ steps.ctx.outputs.manifest_name }}
+      target_environment: ${{ steps.ctx.outputs.target_environment }}
+      tag_name: ${{ steps.ctx.outputs.tag_name }}
+      approval_mode: ${{ steps.ctx.outputs.approval_mode }}
+      workflow_type: ${{ steps.ctx.outputs.workflow_type }}
+
+    steps:
+      - name: Resolve context
+        id: ctx
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_EVENT_TYPE: ${{ github.event.action }}
+          INPUT_MANIFEST: ${{ inputs.manifest_name }}
+          INPUT_TARGET_ENV: ${{ inputs.target_environment }}
+          INPUT_TAG: ${{ inputs.tag_name }}
+          INPUT_WORKFLOW_TYPE: ${{ inputs.workflow_type }}
+          INPUT_SCHEDULE_PROFILE: ${{ inputs.schedule_profile_id }}
+          # repository_dispatch payload fields
+          DISPATCH_MANIFEST: ${{ github.event.client_payload.manifest_name }}
+          DISPATCH_TAG: ${{ github.event.client_payload.tag_name }}
+          DISPATCH_ENV: ${{ github.event.client_payload.target_environment }}
+        run: |
+          set -euo pipefail
+
+          # Determine trigger type
+          case "$EVENT_NAME" in
+            schedule)
+              TRIGGER_TYPE="schedule"
+              APPROVAL_MODE="auto"
+              ;;
+            repository_dispatch)
+              TRIGGER_TYPE="repository_dispatch"
+              APPROVAL_MODE="manual"
+              ;;
+            *)
+              TRIGGER_TYPE="workflow_dispatch"
+              APPROVAL_MODE="manual"
+              ;;
+          esac
+
+          # Resolve manifest name: dispatch payload > input > schedule profile
+          MANIFEST_NAME="$INPUT_MANIFEST"
+          TARGET_ENV="$INPUT_TARGET_ENV"
+          TAG_NAME="$INPUT_TAG"
+          WORKFLOW_TYPE="$INPUT_WORKFLOW_TYPE"
+
+          if [[ "$TRIGGER_TYPE" == "repository_dispatch" ]]; then
+            [[ -n "$DISPATCH_MANIFEST" ]] && MANIFEST_NAME="$DISPATCH_MANIFEST"
+            [[ -n "$DISPATCH_TAG" ]]     && TAG_NAME="$DISPATCH_TAG"
+            [[ -n "$DISPATCH_ENV" ]]     && TARGET_ENV="$DISPATCH_ENV"
+          fi
+
+          # Validate mandatory fields after resolution
+          if [[ -z "$MANIFEST_NAME" && "$WORKFLOW_TYPE" == "deploy" ]]; then
+            echo "::error::manifest_name is required for deploy workflows"
+            exit 1
+          fi
+          if [[ -z "$TARGET_ENV" ]]; then
+            TARGET_ENV="stage"
+          fi
+
+          echo "trigger_type=$TRIGGER_TYPE"    >> "$GITHUB_OUTPUT"
+          echo "manifest_name=$MANIFEST_NAME"  >> "$GITHUB_OUTPUT"
+          echo "target_environment=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG_NAME"             >> "$GITHUB_OUTPUT"
+          echo "approval_mode=$APPROVAL_MODE"   >> "$GITHUB_OUTPUT"
+          echo "workflow_type=$WORKFLOW_TYPE"   >> "$GITHUB_OUTPUT"
+
+          echo "::notice::Context resolved — trigger=$TRIGGER_TYPE, manifest=$MANIFEST_NAME, env=$TARGET_ENV, tag=$TAG_NAME"
+
+      - name: Write step summary
+        shell: bash
+        run: |
+          {
+            echo "### Workflow Context"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Trigger | \`${{ steps.ctx.outputs.trigger_type }}\` |"
+            echo "| Approval mode | \`${{ steps.ctx.outputs.approval_mode }}\` |"
+            echo "| Manifest | \`${{ steps.ctx.outputs.manifest_name }}\` |"
+            echo "| Target environment | \`${{ steps.ctx.outputs.target_environment }}\` |"
+            echo "| Tag | \`${{ steps.ctx.outputs.tag_name }}\` |"
+            echo "| Workflow type | \`${{ steps.ctx.outputs.workflow_type }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

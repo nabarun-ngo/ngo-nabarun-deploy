@@ -1,0 +1,131 @@
+name: Resolve Git Ref
+description: >
+  Resolve the effective git ref (tag or branch) for a deployment.
+  When tag_name is explicitly provided, returns it unchanged.
+  When tag_name is 'latest' or empty, queries the source repository
+  and returns the highest semver tag reachable from target_branch.
+  - stage branch → latest pre-release (beta) tag
+  - main branch  → latest stable tag
+
+inputs:
+  tag_name:
+    description: >
+      Explicit tag to deploy (e.g. 'v1.2.3', 'v1.2.3-beta.4').
+      Pass 'latest' or leave empty to trigger auto-resolution.
+    required: false
+    default: 'latest'
+  target_branch:
+    description: >
+      Logical target branch used to determine which tag stream to pick.
+      'stage' → beta tags, 'main' → stable tags.
+    required: true
+  repository:
+    description: Source repository in org/repo format.
+    required: true
+  github_token:
+    description: GitHub token with read access to the source repository.
+    required: true
+
+outputs:
+  ref:
+    description: Resolved git ref ready for checkout.
+    value: ${{ steps.resolve.outputs.ref }}
+  is_latest:
+    description: '"true" if auto-resolution was used; "false" if explicit tag was provided.'
+    value: ${{ steps.resolve.outputs.is_latest }}
+  tag_stream:
+    description: '"stable" or "beta" — indicates which tag stream was resolved.'
+    value: ${{ steps.resolve.outputs.tag_stream }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve effective ref
+      id: resolve
+      shell: bash
+      env:
+        TAG_NAME: ${{ inputs.tag_name }}
+        TARGET_BRANCH: ${{ inputs.target_branch }}
+        REPOSITORY: ${{ inputs.repository }}
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        set -euo pipefail
+
+        # Validate inputs
+        if [[ -z "$REPOSITORY" ]]; then
+          echo "::error::repository input is required"
+          exit 1
+        fi
+        if [[ -z "$TARGET_BRANCH" ]]; then
+          echo "::error::target_branch input is required"
+          exit 1
+        fi
+
+        # If an explicit non-latest tag is given, use it directly
+        if [[ -n "$TAG_NAME" && "$TAG_NAME" != "latest" ]]; then
+          echo "::notice::Using explicit tag: $TAG_NAME"
+          echo "ref=$TAG_NAME"      >> "$GITHUB_OUTPUT"
+          echo "is_latest=false"   >> "$GITHUB_OUTPUT"
+          # Determine stream from tag format
+          if [[ "$TAG_NAME" =~ -beta\. || "$TAG_NAME" =~ -rc\. || "$TAG_NAME" =~ -alpha\. ]]; then
+            echo "tag_stream=beta" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_stream=stable" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+        fi
+
+        # Auto-resolve: fetch all tags for the repository
+        echo "::notice::Auto-resolving latest tag for branch '$TARGET_BRANCH' in $REPOSITORY"
+
+        ALL_TAGS=$(gh api "repos/$REPOSITORY/tags" --paginate --jq '.[].name' 2>/dev/null || true)
+
+        if [[ -z "$ALL_TAGS" ]]; then
+          echo "::error::No tags found in $REPOSITORY"
+          exit 1
+        fi
+
+        if [[ "$TARGET_BRANCH" == "main" || "$TARGET_BRANCH" == "production" || "$TARGET_BRANCH" == "prod" ]]; then
+          # Stable: no pre-release suffix (vN.N.N only)
+          RESOLVED=$(echo "$ALL_TAGS" \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -1)
+          STREAM="stable"
+        else
+          # Beta stream: pre-release tags first, fall back to latest stable
+          RESOLVED=$(echo "$ALL_TAGS" \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.' \
+            | sort -V \
+            | tail -1)
+          if [[ -z "$RESOLVED" ]]; then
+            RESOLVED=$(echo "$ALL_TAGS" \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V \
+              | tail -1)
+            STREAM="stable"
+          else
+            STREAM="beta"
+          fi
+        fi
+
+        if [[ -z "$RESOLVED" ]]; then
+          echo "::error::Could not resolve a tag for branch '$TARGET_BRANCH' in $REPOSITORY"
+          exit 1
+        fi
+
+        echo "::notice::Resolved ref: $RESOLVED (stream: $STREAM)"
+        echo "ref=$RESOLVED"        >> "$GITHUB_OUTPUT"
+        echo "is_latest=true"       >> "$GITHUB_OUTPUT"
+        echo "tag_stream=$STREAM"   >> "$GITHUB_OUTPUT"
+
+    - name: Write step summary
+      shell: bash
+      run: |
+        echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+        echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Repository | \`${{ inputs.repository }}\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Target branch | \`${{ inputs.target_branch }}\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Resolved ref | \`${{ steps.resolve.outputs.ref }}\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Tag stream | \`${{ steps.resolve.outputs.tag_stream }}\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Auto-resolved | ${{ steps.resolve.outputs.is_latest }} |" >> "$GITHUB_STEP_SUMMARY"

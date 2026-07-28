@@ -1,0 +1,70 @@
+name: Ops — Publish Docs Portal
+
+# Publishes the docs/index.html portal landing page to the gh-pages root.
+# Uses keep_files: true to preserve allure-report/ alongside the portal.
+# Triggered on push to main or manually.
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/ops-publish-site.yml'
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  publish:
+    name: Publish portal to gh-pages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Prepare portal assets
+        run: |
+          set -euo pipefail
+
+          mkdir -p portal-out
+          cp -r docs/. portal-out/
+
+          if [[ ! -f portal-out/index.html ]]; then
+            echo "::error::portal-out/index.html not found after copy"
+            exit 1
+          fi
+
+          # Inject run metadata into the portal for freshness indicator
+          sed -i "s|{{BUILD_DATE}}|$(date -u '+%Y-%m-%d %H:%M UTC')|g" portal-out/index.html
+          sed -i "s|{{REPO}}|${{ github.repository }}|g" portal-out/index.html
+          sed -i "s|{{RUN_URL}}|${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|g" portal-out/index.html
+
+      - name: Deploy portal to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: portal-out
+          publish_branch: gh-pages
+          keep_files: true
+          commit_message: 'docs: update portal [skip ci]'
+          user_name: 'github-actions[bot]'
+          user_email: '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Write step summary
+        run: |
+          PAGES_URL="https://$(echo '${{ github.repository }}' | cut -d/ -f1).github.io/$(echo '${{ github.repository }}' | cut -d/ -f2)/"
+          {
+            echo "### Docs Portal Published"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Portal URL | [$PAGES_URL]($PAGES_URL) |"
+            echo "| Source | \`docs/index.html\` |"
+            echo "| Branch | \`gh-pages\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

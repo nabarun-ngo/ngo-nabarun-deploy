@@ -1,0 +1,287 @@
+name: Reusable — Run Tests (Allure)
+
+on:
+  workflow_call:
+    inputs:
+      test_repository:
+        description: GitHub repository containing Cucumber/Maven tests (org/repo).
+        type: string
+        required: true
+      test_branch:
+        description: Branch to checkout in the test repository.
+        type: string
+        required: false
+        default: main
+      test_tags:
+        description: Cucumber tag expression (e.g. '@smoke', '@regression and not @wip').
+        type: string
+        required: true
+      target_environment:
+        description: Logical environment under test (stage | prod).
+        type: string
+        required: false
+        default: stage
+      github_environment:
+        description: GitHub Environment name for secrets scoping.
+        type: string
+        required: true
+      doppler_project:
+        description: Doppler project name for test secrets (empty = no Doppler).
+        type: string
+        required: false
+        default: ''
+      doppler_config:
+        description: Doppler config name for this environment.
+        type: string
+        required: false
+        default: ''
+      parallelism:
+        description: Number of parallel test execution shards.
+        type: number
+        required: false
+        default: 3
+      timeout_minutes:
+        description: Maximum minutes for each shard.
+        type: number
+        required: false
+        default: 60
+      runner_os:
+        description: Runner image to use for test execution.
+        type: string
+        required: false
+        default: ubuntu-latest
+      report_title:
+        description: Title shown in the Allure report.
+        type: string
+        required: false
+        default: Test Report
+
+    secrets:
+      PAT:
+        required: true
+      DOPPLER_TOKEN:
+        required: false
+
+    outputs:
+      report_url:
+        description: URL to the published Allure report.
+        value: ${{ jobs.report.outputs.report_url }}
+      total_tests:
+        description: Total test cases executed.
+        value: ${{ jobs.report.outputs.total_tests }}
+      passed_tests:
+        description: Passed test cases.
+        value: ${{ jobs.report.outputs.passed_tests }}
+      failed_tests:
+        description: Failed test cases.
+        value: ${{ jobs.report.outputs.failed_tests }}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Discover test features and build a sharded matrix
+  # ──────────────────────────────────────────────────────────────────────────
+  discover:
+    name: Discover test features
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build_matrix.outputs.matrix }}
+      feature_count: ${{ steps.build_matrix.outputs.feature_count }}
+
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.test_repository }}
+          ref: ${{ inputs.test_branch }}
+          token: ${{ secrets.PAT }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Discover feature files
+        id: build_matrix
+        env:
+          TEST_TAGS: ${{ inputs.test_tags }}
+          PARALLELISM: ${{ inputs.parallelism }}
+        run: |
+          set -euo pipefail
+
+          # Find all feature files
+          FEATURE_FILES=$(find . -name '*.feature' -not -path '*/node_modules/*' | sort)
+          FEATURE_COUNT=$(echo "$FEATURE_FILES" | grep -c . || echo 0)
+          echo "feature_count=$FEATURE_COUNT" >> "$GITHUB_OUTPUT"
+          echo "::notice::Found $FEATURE_COUNT feature files"
+
+          # Build shard matrix: distribute features round-robin across shards
+          SHARDS=$PARALLELISM
+          if (( FEATURE_COUNT < SHARDS )); then
+            SHARDS=$FEATURE_COUNT
+          fi
+          if (( SHARDS < 1 )); then
+            SHARDS=1
+          fi
+
+          # Build numeric shard index array
+          MATRIX_JSON=$(python3 -c "
+          import json, sys
+          shards = int('$SHARDS')
+          print(json.dumps({'shard': list(range(1, shards + 1)), 'total_shards': shards}))
+          ")
+
+          echo "matrix=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
+          echo "::notice::Matrix: $MATRIX_JSON"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Execute tests in parallel shards
+  # ──────────────────────────────────────────────────────────────────────────
+  execute:
+    name: Test shard ${{ matrix.shard }}/${{ needs.discover.outputs.matrix && fromJson(needs.discover.outputs.matrix).total_shards || inputs.parallelism }}
+    needs: discover
+    runs-on: ${{ inputs.runner_os }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    environment:
+      name: ${{ inputs.github_environment }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
+
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.test_repository }}
+          ref: ${{ inputs.test_branch }}
+          token: ${{ secrets.PAT }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Install Doppler CLI
+        if: ${{ inputs.doppler_project != '' }}
+        uses: dopplerhq/cli-action@v3
+
+      - name: Run Cucumber tests (with Doppler)
+        if: ${{ inputs.doppler_project != '' }}
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          TEST_TAGS: ${{ inputs.test_tags }}
+          SHARD_INDEX: ${{ matrix.shard }}
+          TOTAL_SHARDS: ${{ fromJson(needs.discover.outputs.matrix).total_shards }}
+          TARGET_ENV: ${{ inputs.target_environment }}
+        run: |
+          doppler run \
+            --project="${{ inputs.doppler_project }}" \
+            --config="${{ inputs.doppler_config }}" \
+            --token="$DOPPLER_TOKEN" \
+            -- mvn test \
+              -Dcucumber.filter.tags="$TEST_TAGS" \
+              -DCONFIG_SOURCE=doppler \
+              -DDOPPLER_PROJECT_NAME="${{ inputs.doppler_project }}" \
+              -DTARGET_ENV="$TARGET_ENV" \
+              -DSHARD_INDEX="$SHARD_INDEX" \
+              -DTOTAL_SHARDS="$TOTAL_SHARDS" \
+              -Dallure.results.directory=allure-results \
+              --batch-mode --no-transfer-progress \
+            || true  # allow test failures to surface in report rather than failing the job
+
+      - name: Run Cucumber tests (without Doppler)
+        if: ${{ inputs.doppler_project == '' }}
+        env:
+          TEST_TAGS: ${{ inputs.test_tags }}
+          SHARD_INDEX: ${{ matrix.shard }}
+          TOTAL_SHARDS: ${{ fromJson(needs.discover.outputs.matrix).total_shards }}
+          TARGET_ENV: ${{ inputs.target_environment }}
+        run: |
+          mvn test \
+            -Dcucumber.filter.tags="$TEST_TAGS" \
+            -DTARGET_ENV="$TARGET_ENV" \
+            -DSHARD_INDEX="$SHARD_INDEX" \
+            -DTOTAL_SHARDS="$TOTAL_SHARDS" \
+            -Dallure.results.directory=allure-results \
+            --batch-mode --no-transfer-progress \
+          || true
+
+      - name: Upload Allure results shard
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: allure-results-shard-${{ matrix.shard }}
+          path: allure-results/
+          retention-days: 1
+          if-no-files-found: warn
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. Publish Allure report to gh-pages
+  # ──────────────────────────────────────────────────────────────────────────
+  report:
+    name: Publish Allure report
+    needs: execute
+    if: always()
+    runs-on: ubuntu-latest
+    outputs:
+      report_url: ${{ steps.publish.outputs.report_url }}
+      total_tests: ${{ steps.summary.outputs.total_tests }}
+      passed_tests: ${{ steps.summary.outputs.passed_tests }}
+      failed_tests: ${{ steps.summary.outputs.failed_tests }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Publish Allure report
+        id: publish
+        uses: ./.github/actions/publish-allure
+        with:
+          report_title: ${{ inputs.report_title }}
+          shard_artifact_prefix: allure-results-shard
+          gh_pages_branch: gh-pages
+          report_base_path: allure-report
+          max_history: '20'
+          github_token: ${{ secrets.PAT }}
+
+      - name: Parse test summary stats
+        id: summary
+        run: |
+          set -euo pipefail
+
+          SUMMARY_JSON="allure-html/widgets/summary.json"
+          if [[ -f "$SUMMARY_JSON" ]]; then
+            TOTAL=$(jq '.statistic.total // 0' "$SUMMARY_JSON")
+            PASSED=$(jq '.statistic.passed // 0' "$SUMMARY_JSON")
+            FAILED=$(jq '.statistic.failed // 0' "$SUMMARY_JSON")
+            BROKEN=$(jq '.statistic.broken // 0' "$SUMMARY_JSON")
+            SKIPPED=$(jq '.statistic.skipped // 0' "$SUMMARY_JSON")
+          else
+            TOTAL=0; PASSED=0; FAILED=0; BROKEN=0; SKIPPED=0
+          fi
+
+          echo "total_tests=$TOTAL"   >> "$GITHUB_OUTPUT"
+          echo "passed_tests=$PASSED" >> "$GITHUB_OUTPUT"
+          echo "failed_tests=$FAILED" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Test Results — ${{ inputs.test_tags }}"
+            echo ""
+            echo "| Status | Count |"
+            echo "|--------|-------|"
+            echo "| Total | $TOTAL |"
+            echo "| ✅ Passed | $PASSED |"
+            echo "| ❌ Failed | $FAILED |"
+            echo "| 🔴 Broken | $BROKEN |"
+            echo "| ⏭ Skipped | $SKIPPED |"
+            echo ""
+            echo "📊 [View full Allure report](${{ steps.publish.outputs.report_url }})"
+          } >> "$GITHUB_STEP_SUMMARY"

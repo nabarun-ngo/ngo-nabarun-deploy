@@ -1,0 +1,42 @@
+{
+  "$schema": "../../schemas/schedules.v1.schema.json",
+  "schedules": [
+    {
+      "id": "nightly-smoke",
+      "description": "Nightly smoke test against stage — quick confidence check after every deploy.",
+      "cron": "0 3 * * *",
+      "profile": {
+        "tags": "@smoke",
+        "environment": "stage",
+        "parallelism": 2,
+        "timeoutMinutes": 30
+      },
+      "githubEnvironment": "tests-scheduled"
+    },
+    {
+      "id": "weekly-regression",
+      "description": "Full regression suite every Monday — comprehensive coverage before Monday deploys.",
+      "cron": "0 2 * * 1",
+      "profile": {
+        "tags": "@regression",
+        "environment": "stage",
+        "parallelism": 5,
+        "timeoutMinutes": 90
+      },
+      "githubEnvironment": "tests-scheduled"
+    },
+    {
+      "id": "post-deploy-publicsmoke",
+      "description": "Public site smoke test — triggered via repository_dispatch after bi-weekly public site deploy.",
+      "trigger": "repository_dispatch",
+      "eventType": "Trigger-Run-Tests",
+      "profile": {
+        "tags": "@publicsmoke",
+        "environment": "stage",
+        "parallelism": 2,
+        "timeoutMinutes": 20
+      },
+      "githubEnvironment": "tests-scheduled"
+    }
+  ]
+}

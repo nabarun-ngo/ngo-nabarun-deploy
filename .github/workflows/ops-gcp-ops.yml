@@ -1,0 +1,427 @@
+name: Ops — GCP Operations Hub
+
+# Interactive GCP operations hub — enhanced over the original GCP-Logs.yml.
+# All operations run via workflow_dispatch only.
+# Secrets are scoped to the selected environment (stage/prod).
+# Destructive operations require confirm: "yes" to prevent accidental triggers.
+#
+# Operations:
+#   download-logs      — fetch Cloud Logging entries → artifact
+#   restart-service    — stop all running instances for cold restart
+#   view-versions      — list deployed GAE versions with traffic split
+#   cleanup-versions   — delete old non-serving GAE versions (interactive)
+#   cleanup-gcs        — delete stale GCS staging files
+#   cleanup-registry   — prune untagged Artifact Registry images (on-demand)
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Operation to perform'
+        required: true
+        type: choice
+        options:
+          - download-logs
+          - restart-service
+          - view-versions
+          - cleanup-versions
+          - cleanup-gcs
+          - cleanup-registry
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - stage
+          - prod
+      service_name:
+        description: 'GAE service name (default: default)'
+        required: false
+        default: 'default'
+      log_filter:
+        description: 'Cloud Logging filter (for download-logs)'
+        required: false
+        default: 'resource.type="gae_app"'
+      log_severity:
+        description: 'Minimum log severity (for download-logs)'
+        required: false
+        type: choice
+        options:
+          - DEFAULT
+          - INFO
+          - WARNING
+          - ERROR
+          - CRITICAL
+        default: 'DEFAULT'
+      last_hours:
+        description: 'Log time window in hours (for download-logs, default: 24)'
+        required: false
+        default: '24'
+      log_format:
+        description: 'Log output format'
+        required: false
+        type: choice
+        options:
+          - txt
+          - json
+          - csv
+        default: 'txt'
+      keep_versions:
+        description: 'GAE versions to keep (for cleanup-versions, default: 2)'
+        required: false
+        default: '2'
+      dry_run:
+        description: 'Dry run mode for cleanup operations'
+        required: false
+        type: boolean
+        default: true
+      confirm:
+        description: 'Type "yes" to confirm destructive operations (restart, cleanup-*)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Validate inputs before consuming secrets
+  # ──────────────────────────────────────────────────────────────────────────
+  validate:
+    name: Validate inputs
+    runs-on: ubuntu-latest
+    outputs:
+      is_destructive: ${{ steps.check.outputs.is_destructive }}
+
+    steps:
+      - name: Check destructive operation confirmation
+        id: check
+        env:
+          OPERATION: ${{ inputs.operation }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          DESTRUCTIVE_OPS="restart-service cleanup-versions cleanup-gcs cleanup-registry"
+
+          IS_DESTRUCTIVE="false"
+          if echo "$DESTRUCTIVE_OPS" | grep -qw "$OPERATION"; then
+            IS_DESTRUCTIVE="true"
+            if [[ "$CONFIRM" != "yes" ]]; then
+              echo "::error::Operation '$OPERATION' is destructive. Set confirm to 'yes' to proceed."
+              exit 1
+            fi
+          fi
+
+          echo "is_destructive=$IS_DESTRUCTIVE" >> "$GITHUB_OUTPUT"
+          echo "::notice::Operation: $OPERATION | Destructive: $IS_DESTRUCTIVE"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Execute selected operation
+  # ──────────────────────────────────────────────────────────────────────────
+  execute:
+    name: Execute — ${{ inputs.operation }} (${{ inputs.environment }})
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    outputs:
+      result_summary: ${{ steps.op.outputs.result_summary }}
+      artifact_name: ${{ steps.op.outputs.artifact_name }}
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Execute operation
+        id: op
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          OPERATION: ${{ inputs.operation }}
+          SERVICE_NAME: ${{ inputs.service_name }}
+          LOG_FILTER: ${{ inputs.log_filter }}
+          LOG_SEVERITY: ${{ inputs.log_severity }}
+          LAST_HOURS: ${{ inputs.last_hours }}
+          LOG_FORMAT: ${{ inputs.log_format }}
+          KEEP_VERSIONS: ${{ inputs.keep_versions }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+
+          ARTIFACT_NAME=""
+          RESULT_SUMMARY=""
+
+          case "$OPERATION" in
+            # ──────────────────────────────────────────────────────────────
+            download-logs)
+              echo "Fetching Cloud Logging entries..."
+
+              START_TIME=$(date -u -d "${LAST_HOURS} hours ago" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+                || date -u -v-${LAST_HOURS}H '+%Y-%m-%dT%H:%M:%SZ')
+              END_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+              FULL_FILTER="${LOG_FILTER} AND severity>=${LOG_SEVERITY} AND timestamp>=\"${START_TIME}\""
+
+              case "$LOG_FORMAT" in
+                json)
+                  FORMAT_FLAG="json"
+                  OUT_FILE="cloud-logs.json"
+                  ;;
+                csv)
+                  FORMAT_FLAG="csv"
+                  OUT_FILE="cloud-logs.csv"
+                  ;;
+                *)
+                  FORMAT_FLAG="text"
+                  OUT_FILE="cloud-logs.txt"
+                  ;;
+              esac
+
+              gcloud logging read "$FULL_FILTER" \
+                --project="$GCP_PROJECT_ID" \
+                --format="$FORMAT_FLAG" \
+                --freshness="${LAST_HOURS}h" \
+                > "$OUT_FILE" 2>&1
+
+              ENTRY_COUNT=$(wc -l < "$OUT_FILE" | xargs)
+              ARTIFACT_NAME="cloud-logs-${TARGET_ENV}-${{ github.run_id }}"
+
+              RESULT_SUMMARY="Downloaded $ENTRY_COUNT lines of logs | Filter: $LOG_FILTER | Severity: $LOG_SEVERITY | Window: last ${LAST_HOURS}h"
+              echo "result_summary=$RESULT_SUMMARY" >> "$GITHUB_OUTPUT"
+              echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+              ;;
+
+            # ──────────────────────────────────────────────────────────────
+            restart-service)
+              echo "Restarting GAE service: $SERVICE_NAME..."
+
+              # List instances with their actual version — format: VERSION<TAB>INSTANCE_ID
+              INSTANCES=$(gcloud app instances list \
+                --service="$SERVICE_NAME" \
+                --project="$GCP_PROJECT_ID" \
+                --format='value(version,id)' 2>/dev/null || true)
+
+              BEFORE_COUNT=$(echo "$INSTANCES" | grep -c . || echo 0)
+
+              if [[ -z "$INSTANCES" ]]; then
+                echo "No instances to stop (service may auto-scale to zero)"
+              else
+                while IFS=$'\t' read -r VERSION INSTANCE_ID; do
+                  [[ -z "$INSTANCE_ID" ]] && continue
+                  echo "Deleting instance $INSTANCE_ID (version: $VERSION)..."
+                  gcloud app instances delete "$INSTANCE_ID" \
+                    --service="$SERVICE_NAME" \
+                    --version="$VERSION" \
+                    --project="$GCP_PROJECT_ID" \
+                    --quiet 2>/dev/null || true
+                done <<< "$INSTANCES"
+              fi
+
+              sleep 10
+
+              AFTER_COUNT=$(gcloud app instances list \
+                --service="$SERVICE_NAME" \
+                --project="$GCP_PROJECT_ID" \
+                --format='value(id)' 2>/dev/null | wc -l | xargs)
+
+              RESULT_SUMMARY="Service: $SERVICE_NAME | Pre-restart instances: $BEFORE_COUNT | Post-restart instances: $AFTER_COUNT"
+              echo "result_summary=$RESULT_SUMMARY" >> "$GITHUB_OUTPUT"
+              ;;
+
+            # ──────────────────────────────────────────────────────────────
+            view-versions)
+              echo "Listing GAE versions..."
+
+              gcloud app versions list \
+                --project="$GCP_PROJECT_ID" \
+                --format='table(service,id,traffic_split,last_deployed_time.date(tz=UTC),serving_status)' \
+                > versions-report.txt 2>&1
+
+              cat versions-report.txt
+              ARTIFACT_NAME="versions-report-${TARGET_ENV}-${{ github.run_id }}"
+              RESULT_SUMMARY="Version list generated — see artifact for details"
+              echo "result_summary=$RESULT_SUMMARY" >> "$GITHUB_OUTPUT"
+              echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+              ;;
+
+            # ──────────────────────────────────────────────────────────────
+            cleanup-versions)
+              echo "Cleaning up old non-serving GAE versions (keep: $KEEP_VERSIONS)..."
+
+              SERVICES=$(gcloud app services list \
+                --project="$GCP_PROJECT_ID" \
+                --format='value(id)' 2>/dev/null)
+
+              TOTAL_DELETED=0
+              {
+                echo "# GAE Version Cleanup Report"
+                echo "Keep: $KEEP_VERSIONS versions | Dry run: $DRY_RUN"
+                echo ""
+              } > versions-cleanup.txt
+
+              while IFS= read -r SVC; do
+                [[ -z "$SVC" ]] && continue
+
+                VERSIONS=$(gcloud app versions list \
+                  --service="$SVC" \
+                  --project="$GCP_PROJECT_ID" \
+                  --format='value(id,TRAFFIC_SPLIT,SERVING_STATUS)' \
+                  --sort-by='~creationTime' 2>/dev/null)
+
+                KEEP_COUNT=0
+                DELETABLE=()
+                while IFS=$'\t' read -r VID SPLIT STATUS; do
+                  [[ -z "$VID" ]] && continue
+                  if [[ "$STATUS" == "SERVING" || ( $KEEP_COUNT -lt $KEEP_VERSIONS ) ]]; then
+                    (( KEEP_COUNT++ ))
+                  else
+                    DELETABLE+=("$VID")
+                  fi
+                done <<< "$VERSIONS"
+
+                echo "Service $SVC: keeping $KEEP_COUNT, deleting ${#DELETABLE[@]}" | tee -a versions-cleanup.txt
+
+                if [[ ${#DELETABLE[@]} -gt 0 && "$DRY_RUN" == "false" ]]; then
+                  gcloud app versions delete "${DELETABLE[@]}" \
+                    --service="$SVC" \
+                    --project="$GCP_PROJECT_ID" \
+                    --quiet || true
+                  TOTAL_DELETED=$(( TOTAL_DELETED + ${#DELETABLE[@]} ))
+                fi
+              done <<< "$SERVICES"
+
+              ARTIFACT_NAME="versions-cleanup-${TARGET_ENV}-${{ github.run_id }}"
+              RESULT_SUMMARY="Deleted $TOTAL_DELETED version(s) across all services | Dry run: $DRY_RUN"
+              echo "result_summary=$RESULT_SUMMARY" >> "$GITHUB_OUTPUT"
+              echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+              ;;
+
+            # ──────────────────────────────────────────────────────────────
+            cleanup-gcs)
+              echo "Cleaning stale GCS staging files..."
+              STAGING_BUCKET="staging.${GCP_PROJECT_ID}.appspot.com"
+
+              FILES=$(gsutil ls -l "gs://${STAGING_BUCKET}/**" 2>/dev/null \
+                | awk 'NF==3 {print $2, $3}' \
+                | sort -k1 | head -100 || echo "")
+
+              COUNT=0
+              {
+                echo "# GCS Staging Cleanup"
+                echo "Bucket: gs://${STAGING_BUCKET}"
+                echo ""
+              } > gcs-cleanup.txt
+
+              echo "$FILES" | while read -r DATETIME FILEPATH; do
+                [[ -z "$FILEPATH" ]] && continue
+                echo "$FILEPATH" >> gcs-cleanup.txt
+                if [[ "$DRY_RUN" == "false" ]]; then
+                  gsutil rm "$FILEPATH" 2>/dev/null || true
+                fi
+                (( COUNT++ )) || true
+              done
+
+              ARTIFACT_NAME="gcs-cleanup-${TARGET_ENV}-${{ github.run_id }}"
+              RESULT_SUMMARY="Processed $COUNT file(s) in gs://$STAGING_BUCKET | Dry run: $DRY_RUN"
+              echo "result_summary=$RESULT_SUMMARY" >> "$GITHUB_OUTPUT"
+              echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+              ;;
+
+            # ──────────────────────────────────────────────────────────────
+            cleanup-registry)
+              echo "Pruning untagged Artifact Registry images..."
+
+              REPOS=$(gcloud artifacts repositories list \
+                --project="$GCP_PROJECT_ID" \
+                --format='value(name)' 2>/dev/null || echo "")
+
+              {
+                echo "# Artifact Registry Cleanup"
+                echo "Dry run: $DRY_RUN"
+                echo ""
+              } > ar-cleanup.txt
+
+              TOTAL=0
+              while IFS= read -r REPO; do
+                [[ -z "$REPO" ]] && continue
+                UNTAGGED=$(gcloud artifacts docker images list "$REPO" \
+                  --project="$GCP_PROJECT_ID" \
+                  --filter="tags=''" \
+                  --format='value(IMAGE)' 2>/dev/null | head -50 || echo "")
+
+                COUNT=$(echo "$UNTAGGED" | grep -c . || echo 0)
+                echo "Repo: $REPO — $COUNT untagged images" | tee -a ar-cleanup.txt
+
+                if [[ -n "$UNTAGGED" && "$DRY_RUN" == "false" ]]; then
+                  echo "$UNTAGGED" | while read img; do
+                    [[ -n "$img" ]] && gcloud artifacts docker images delete "$img" \
+                      --project="$GCP_PROJECT_ID" \
+                      --delete-tags \
+                      --quiet 2>/dev/null || true
+                  done
+                  TOTAL=$(( TOTAL + COUNT ))
+                fi
+              done <<< "$REPOS"
+
+              ARTIFACT_NAME="ar-cleanup-${TARGET_ENV}-${{ github.run_id }}"
+              RESULT_SUMMARY="Deleted $TOTAL untagged image(s) | Dry run: $DRY_RUN"
+              echo "result_summary=$RESULT_SUMMARY" >> "$GITHUB_OUTPUT"
+              echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Upload operation artifact
+        if: ${{ steps.op.outputs.artifact_name != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.op.outputs.artifact_name }}
+          path: |
+            cloud-logs.*
+            versions-report.txt
+            versions-cleanup.txt
+            gcs-cleanup.txt
+            ar-cleanup.txt
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Rich summary (always runs)
+  # ──────────────────────────────────────────────────────────────────────────
+  summary:
+    name: Operation summary
+    needs: [validate, execute]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Write step summary
+        run: |
+          GCP_CONSOLE_BASE="https://console.cloud.google.com"
+          {
+            echo "## GCP Operations Hub"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Operation | \`${{ inputs.operation }}\` |"
+            echo "| Environment | \`${{ inputs.environment }}\` |"
+            echo "| Service | \`${{ inputs.service_name }}\` |"
+            echo "| Dry run | ${{ inputs.dry_run }} |"
+            echo "| Result | ${{ needs.execute.outputs.result_summary }} |"
+            echo "| Status | ${{ needs.execute.result }} |"
+            echo ""
+            echo "### GCP Console Links"
+            echo ""
+            echo "- [App Engine Versions](${GCP_CONSOLE_BASE}/appengine/versions)"
+            echo "- [Cloud Logging](${GCP_CONSOLE_BASE}/logs/query)"
+            echo "- [Artifact Registry](${GCP_CONSOLE_BASE}/artifacts)"
+            echo "- [GCS Browser](${GCP_CONSOLE_BASE}/storage/browser)"
+            echo ""
+            if [[ "${{ needs.execute.outputs.artifact_name }}" != "" ]]; then
+              echo "> Detailed report available as a workflow artifact: \`${{ needs.execute.outputs.artifact_name }}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

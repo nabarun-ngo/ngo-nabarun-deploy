@@ -1,0 +1,217 @@
+name: Ops — Deploy Frontend (Firebase)
+
+# Thin caller for deploying a Node.js frontend to Firebase Hosting.
+# Also handles the bi-weekly scheduled public site deploy.
+#
+# Schedule: '0 2 1,15 * *' — 1st and 15th of each month at 02:00 UTC.
+# On schedule: hard-routes to frontend manifest, stage environment,
+#              then dispatches post-deploy smoke tests.
+#
+# Access control:
+#   stage            → GitHub Environment 'stage'
+#   stage (schedule) → GitHub Environment 'stage-scheduled' (auto-approved)
+#   prod             → GitHub Environment 'prod' (required reviewers)
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_name:
+        description: 'Frontend manifest'
+        required: true
+        type: choice
+        options:
+          - frontend
+      target_environment:
+        description: 'Deploy target'
+        required: true
+        type: choice
+        options:
+          - stage
+          - prod
+      tag_name:
+        description: 'Tag to deploy (leave blank or "latest" to auto-resolve)'
+        required: false
+        default: 'latest'
+
+  repository_dispatch:
+    types: [Trigger-Deploy-Frontend]
+
+  schedule:
+    # 1st and 15th of each month at 02:00 UTC
+    - cron: '0 2 1,15 * *'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Normalize inputs (schedule hard-routes to public site / stage)
+  # ──────────────────────────────────────────────────────────────────────────
+  context:
+    name: Setup context
+    uses: ./.github/workflows/reusable-setup-context.yml
+    with:
+      manifest_name: >-
+        ${{
+          github.event_name == 'schedule'        && 'frontend' ||
+          github.event_name == 'workflow_dispatch' && inputs.manifest_name ||
+          github.event.client_payload.manifest_name
+        }}
+      target_environment: >-
+        ${{
+          github.event_name == 'schedule'          && 'stage' ||
+          github.event_name == 'workflow_dispatch'  && inputs.target_environment ||
+          github.event.client_payload.target_environment || 'stage'
+        }}
+      tag_name: >-
+        ${{
+          github.event_name == 'schedule'          && 'latest' ||
+          github.event_name == 'workflow_dispatch'  && inputs.tag_name ||
+          github.event.client_payload.tag_name || 'latest'
+        }}
+      workflow_type: deploy
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Resolve manifest
+  # ──────────────────────────────────────────────────────────────────────────
+  manifest:
+    name: Resolve manifest
+    needs: context
+    runs-on: ubuntu-latest
+    outputs:
+      app_name: ${{ steps.resolve.outputs.app_name }}
+      repository: ${{ steps.resolve.outputs.repository }}
+      build_root: ${{ steps.resolve.outputs.build_root }}
+      app_root: ${{ steps.resolve.outputs.app_root }}
+      node_version: ${{ steps.resolve.outputs.node_version }}
+      install_command: ${{ steps.resolve.outputs.install_command }}
+      build_command: ${{ steps.resolve.outputs.build_command }}
+      output_path: ${{ steps.resolve.outputs.output_path }}
+      config_template: ${{ steps.resolve.outputs.config_template }}
+      secrets_provider: ${{ steps.resolve.outputs.secrets_provider }}
+      doppler_project: ${{ steps.resolve.outputs.doppler_project }}
+      doppler_config: ${{ steps.resolve.outputs.doppler_config }}
+      source_ref: ${{ steps.resolve.outputs.source_ref }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Resolve manifest
+        id: resolve
+        uses: ./.github/actions/resolve-manifest
+        with:
+          manifest_name: ${{ needs.context.outputs.manifest_name }}
+          target_environment: ${{ needs.context.outputs.target_environment }}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. Resolve git ref
+  # ──────────────────────────────────────────────────────────────────────────
+  resolve_ref:
+    name: Resolve git ref
+    needs: [context, manifest]
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Resolve ref
+        id: resolve
+        uses: ./.github/actions/resolve-git-ref
+        with:
+          tag_name: ${{ needs.context.outputs.tag_name }}
+          target_branch: ${{ needs.manifest.outputs.source_ref }}
+          repository: ${{ needs.manifest.outputs.repository }}
+          github_token: ${{ secrets.PAT }}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. Resolve GitHub Environment
+  # ──────────────────────────────────────────────────────────────────────────
+  resolve_env:
+    name: Resolve GitHub Environment
+    needs: context
+    runs-on: ubuntu-latest
+    outputs:
+      github_environment: ${{ steps.resolve.outputs.github_environment }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Resolve environment
+        id: resolve
+        uses: ./.github/actions/resolve-deployment-environment
+        with:
+          trigger_type: ${{ needs.context.outputs.trigger_type }}
+          target_environment: ${{ needs.context.outputs.target_environment }}
+          workflow_type: deploy
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 5. Deploy Firebase
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    needs: [manifest, resolve_ref, resolve_env, context]
+    uses: ./.github/workflows/reusable-deploy-firebase-node.yml
+    with:
+      app_name: ${{ needs.manifest.outputs.app_name }}
+      repository: ${{ needs.manifest.outputs.repository }}
+      build_root: ${{ needs.manifest.outputs.build_root }}
+      app_root: ${{ needs.manifest.outputs.app_root }}
+      node_version: ${{ needs.manifest.outputs.node_version }}
+      install_command: ${{ needs.manifest.outputs.install_command }}
+      build_command: ${{ needs.manifest.outputs.build_command }}
+      output_path: ${{ needs.manifest.outputs.output_path }}
+      config_template: ${{ needs.manifest.outputs.config_template }}
+      secrets_provider: ${{ needs.manifest.outputs.secrets_provider }}
+      doppler_project: ${{ needs.manifest.outputs.doppler_project }}
+      doppler_config: ${{ needs.manifest.outputs.doppler_config }}
+      ref: ${{ needs.resolve_ref.outputs.ref }}
+      github_environment: ${{ needs.resolve_env.outputs.github_environment }}
+      target_environment: ${{ needs.context.outputs.target_environment }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
+      FB_SA_KEY: ${{ secrets.FB_SA_KEY }}
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 6. Post-deploy: dispatch smoke tests (scheduled run only)
+  # ──────────────────────────────────────────────────────────────────────────
+  dispatch_smoke_tests:
+    name: Dispatch post-deploy smoke tests
+    needs: deploy
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fire Trigger-Run-Tests dispatch
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${REPO}/dispatches" \
+            -f event_type="Trigger-Run-Tests" \
+            -f "client_payload[tags]=@publicsmoke" \
+            -f "client_payload[target_environment]=stage" \
+            -f "client_payload[triggered_by]=scheduled-public-site-deploy"
+
+          echo "::notice::Dispatched @publicsmoke tests after scheduled deploy"
+
+      - name: Write step summary
+        run: |
+          {
+            echo "### Scheduled Public Site Deploy Complete"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Hosting URL | ${{ needs.deploy.outputs.hosting_url }} |"
+            echo "| Smoke tests | Dispatched (Trigger-Run-Tests @publicsmoke) |"
+          } >> "$GITHUB_STEP_SUMMARY"

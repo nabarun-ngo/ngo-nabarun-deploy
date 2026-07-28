@@ -1,0 +1,164 @@
+name: Stage Node Artifact
+description: >
+  Build a production-ready deploy bundle from a Node.js application.
+  Layout-agnostic: install/build runs in build_root; the deploy artifact is
+  staged from app_root (when set) or build_root (when app_root is omitted).
+  Works for single-app repos and workspace monorepos without any layout flag.
+
+inputs:
+  build_root:
+    description: Directory to run install + build commands (relative to repo root).
+    required: false
+    default: '.'
+  app_root:
+    description: >
+      Path to the app directory inside the repo (relative to repo root).
+      When set, the artifact is staged from <app_root>/<output_path>.
+      When omitted, staged from <build_root>/<output_path>.
+      Use this for monorepo workspace apps; omit for single-app repos.
+    required: false
+    default: ''
+  install_command:
+    description: Dependency install command.
+    required: false
+    default: 'npm ci'
+  build_command:
+    description: Build command.
+    required: true
+  output_path:
+    description: Build output path (relative to build_root).
+    required: false
+    default: 'dist'
+  bundle_includes:
+    description: Comma-separated list of extra directories to include (e.g. 'prisma,migrations').
+    required: false
+    default: ''
+  doppler_bundle_cli:
+    description: 'true | false — download Doppler CLI binary into bundle/bin/doppler.'
+    required: false
+    default: 'false'
+  artifact_name:
+    description: Name for the uploaded GitHub Actions artifact.
+    required: true
+  node_version:
+    description: Node.js version to use.
+    required: false
+    default: '20'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js ${{ inputs.node_version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node_version }}
+        cache: npm
+        cache-dependency-path: ${{ inputs.build_root }}/package-lock.json
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.build_root }}
+      run: ${{ inputs.install_command }}
+
+    - name: Build application
+      shell: bash
+      working-directory: ${{ inputs.build_root }}
+      run: ${{ inputs.build_command }}
+
+    - name: Stage deploy bundle
+      id: stage
+      shell: bash
+      env:
+        BUILD_ROOT: ${{ inputs.build_root }}
+        APP_ROOT: ${{ inputs.app_root }}
+        OUTPUT_PATH: ${{ inputs.output_path }}
+        BUNDLE_INCLUDES: ${{ inputs.bundle_includes }}
+        ARTIFACT_NAME: ${{ inputs.artifact_name }}
+      run: |
+        set -euo pipefail
+
+        BUNDLE_DIR="__deploy_bundle__"
+        rm -rf "$BUNDLE_DIR"
+        mkdir -p "$BUNDLE_DIR"
+
+        # If app_root is set, stage from there; otherwise use build_root.
+        # This covers both single-app repos and monorepo workspaces without
+        # needing an explicit layout flag.
+        if [[ -n "$APP_ROOT" ]]; then
+          SRC_BASE="$APP_ROOT"
+        else
+          SRC_BASE="$BUILD_ROOT"
+        fi
+
+        echo "Staging output from: $SRC_BASE/$OUTPUT_PATH"
+        cp -r "$SRC_BASE/$OUTPUT_PATH" "$BUNDLE_DIR/dist"
+
+        # Copy package.json and production lock file
+        if [[ -f "$SRC_BASE/package.json" ]]; then
+          cp "$SRC_BASE/package.json" "$BUNDLE_DIR/"
+        fi
+        if [[ -f "$SRC_BASE/package-lock.json" ]]; then
+          cp "$SRC_BASE/package-lock.json" "$BUNDLE_DIR/"
+        fi
+
+        # Install production node_modules into the bundle
+        cd "$BUNDLE_DIR"
+        npm ci --omit=dev --ignore-scripts 2>&1 | tail -5
+        cd -
+
+        # Stage extra includes (e.g. prisma schema, migrations)
+        if [[ -n "$BUNDLE_INCLUDES" ]]; then
+          IFS=',' read -ra EXTRAS <<< "$BUNDLE_INCLUDES"
+          for EXTRA in "${EXTRAS[@]}"; do
+            EXTRA=$(echo "$EXTRA" | xargs)
+            EXTRA_SRC="$SRC_BASE/$EXTRA"
+            if [[ -e "$EXTRA_SRC" ]]; then
+              echo "Including extra: $EXTRA"
+              cp -r "$EXTRA_SRC" "$BUNDLE_DIR/$EXTRA"
+            else
+              echo "::warning::bundle_includes entry '$EXTRA' not found at '$EXTRA_SRC', skipping."
+            fi
+          done
+        fi
+
+        # Copy start.sh entrypoint from platform config
+        if [[ -f "config/platforms/gae/start.sh" ]]; then
+          cp "config/platforms/gae/start.sh" "$BUNDLE_DIR/start.sh"
+          chmod +x "$BUNDLE_DIR/start.sh"
+        fi
+
+        echo "bundle_dir=$BUNDLE_DIR" >> "$GITHUB_OUTPUT"
+        echo "::notice::Bundle staged at $BUNDLE_DIR"
+        du -sh "$BUNDLE_DIR"
+
+    - name: Download and embed Doppler CLI
+      if: ${{ inputs.doppler_bundle_cli == 'true' }}
+      shell: bash
+      env:
+        BUNDLE_DIR: ${{ steps.stage.outputs.bundle_dir }}
+      run: |
+        set -euo pipefail
+
+        mkdir -p "$BUNDLE_DIR/bin"
+
+        # Download latest stable Doppler CLI binary for Linux x86_64 (GAE standard runtime OS)
+        DOPPLER_VERSION=$(curl -sf "https://api.github.com/repos/DopplerHQ/cli/releases/latest" \
+          | jq -r '.tag_name' | sed 's/^v//')
+
+        echo "Downloading Doppler CLI v${DOPPLER_VERSION}..."
+        curl -fsSL "https://github.com/DopplerHQ/cli/releases/download/${DOPPLER_VERSION}/doppler_${DOPPLER_VERSION}_linux_amd64.tar.gz" \
+          -o /tmp/doppler.tar.gz
+
+        tar -xzf /tmp/doppler.tar.gz -C /tmp doppler
+        mv /tmp/doppler "$BUNDLE_DIR/bin/doppler"
+        chmod +x "$BUNDLE_DIR/bin/doppler"
+
+        echo "::notice::Doppler CLI v${DOPPLER_VERSION} embedded at bin/doppler"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact_name }}
+        path: __deploy_bundle__/
+        retention-days: 1
+        if-no-files-found: error

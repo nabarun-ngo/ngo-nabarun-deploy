@@ -1,0 +1,32 @@
+# Deploy bundles (never commit these)
+__deploy_bundle__/
+allure-results/
+allure-results-raw/
+allure-html/
+gh-pages-work/
+portal-out/
+
+# Rendered platform configs (generated at deploy time — contain env vars)
+*.rendered.yaml
+*.rendered.json
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Temp
+/tmp/
+*.tmp

@@ -1,0 +1,30 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# EXAMPLE: CI pull request check for an application repo.
+#
+# Drop this file into your application repository at:
+#   .github/workflows/ci.yml
+#
+# Configure branch protection on both `main` and `stage` to require the
+# "Build check" job (via required status checks) before allowing merges.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main, stage]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check:
+    uses: YOUR_ORG/deploy-platform/.github/workflows/reusable-ci-pr-check.yml@main
+    with:
+      node_version: '20'
+      build_root: '.'
+      install_command: 'npm ci'
+      build_command: 'npm run build'
+      lint_command: 'npm run lint'
+      type_check_command: 'npm run type-check'
+      enable_tests: true
+      test_command: 'npm test -- --passWithNoTests'
+      upload_coverage: false

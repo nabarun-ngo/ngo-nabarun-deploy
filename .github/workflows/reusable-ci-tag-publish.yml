@@ -1,0 +1,351 @@
+name: Reusable — CI Tag + Publish + Release
+
+# Called by application repos after a PR merges to main or stage.
+# Determines semver bump from conventional commit prefix in the merge commit
+# message, creates a git tag (stable on main, beta on stage), optionally
+# publishes an npm package, creates a GitHub Release, and optionally fires a
+# repository_dispatch to trigger an ops deploy workflow.
+
+on:
+  workflow_call:
+    inputs:
+      source_branch:
+        description: Branch that was pushed to (main | stage).
+        type: string
+        required: true
+      node_version:
+        description: Node.js version.
+        type: string
+        required: false
+        default: '20'
+      monorepo_root:
+        description: Working directory for build/publish commands.
+        type: string
+        required: false
+        default: '.'
+      build_before_publish:
+        description: Run build command before publishing.
+        type: boolean
+        required: false
+        default: true
+      build_command:
+        description: Build command (used before publish when build_before_publish is true).
+        type: string
+        required: false
+        default: 'npm run build'
+      publish_package:
+        description: Whether to publish an npm package.
+        type: boolean
+        required: false
+        default: false
+      publish_command:
+        description: Command to publish the package (e.g. 'npm run release:publish').
+        type: string
+        required: false
+        default: 'npm run release:publish'
+      auto_deploy:
+        description: Fire a repository_dispatch to the ops repo after tagging.
+        type: boolean
+        required: false
+        default: false
+      deploy_ops_repo:
+        description: 'org/repo of the ops repository to dispatch to.'
+        type: string
+        required: false
+        default: ''
+      deploy_manifest:
+        description: Manifest name to include in the dispatch payload.
+        type: string
+        required: false
+        default: ''
+      deploy_event_type:
+        description: 'repository_dispatch event type (e.g. Trigger-Deploy-Backend).'
+        type: string
+        required: false
+        default: 'Trigger-Deploy-Backend'
+      deploy_target_environment:
+        description: Logical environment to dispatch deploy to (stage for beta, prod not auto-deployed).
+        type: string
+        required: false
+        default: 'stage'
+
+    secrets:
+      NPM_TOKEN:
+        required: false
+      PAT:
+        required: true
+
+    outputs:
+      tag_name:
+        description: Created git tag (e.g. v1.2.3 or v1.2.3-beta.4).
+        value: ${{ jobs.tag.outputs.tag_name }}
+      release_url:
+        description: GitHub Release URL (empty if no release created).
+        value: ${{ jobs.release.outputs.release_url }}
+      tag_stream:
+        description: '"stable" or "beta"'
+        value: ${{ jobs.tag.outputs.tag_stream }}
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Compute semver bump + create git tag
+  # ──────────────────────────────────────────────────────────────────────────
+  tag:
+    name: Compute tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.bump.outputs.tag_name }}
+      tag_stream: ${{ steps.bump.outputs.tag_stream }}
+      bump_type: ${{ steps.bump.outputs.bump_type }}
+
+    steps:
+      - name: Checkout with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+
+      - name: Compute version bump
+        id: bump
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |
+          set -euo pipefail
+
+          # Determine tag stream
+          if [[ "$SOURCE_BRANCH" == "main" || "$SOURCE_BRANCH" == "production" ]]; then
+            TAG_STREAM="stable"
+          else
+            TAG_STREAM="beta"
+          fi
+
+          # Determine bump type from last merge commit message
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          echo "::notice::Last commit: $COMMIT_MSG"
+
+          if echo "$COMMIT_MSG" | grep -qiE 'BREAKING CHANGE|^[a-z]+(\([^)]+\))?!:'; then
+            BUMP="major"
+          elif echo "$COMMIT_MSG" | grep -qiE '^feat(\([^)]+\))?:'; then
+            BUMP="minor"
+          else
+            BUMP="patch"
+          fi
+
+          echo "::notice::Bump type: $BUMP, stream: $TAG_STREAM"
+
+          # Find last relevant tag for this stream
+          if [[ "$TAG_STREAM" == "stable" ]]; then
+            LAST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V | tail -1 || echo "v0.0.0")
+          else
+            LAST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*-beta.*' \
+              | sort -V | tail -1 \
+              || git tag --list 'v[0-9]*.[0-9]*.[0-9]*' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V | tail -1 \
+              || echo "v0.0.0")
+          fi
+
+          # Strip beta suffix to get base version
+          BASE_VERSION=$(echo "$LAST_TAG" | sed 's/-beta\.[0-9]*//' | sed 's/^v//')
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
+
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
+
+          NEW_BASE="v${MAJOR}.${MINOR}.${PATCH}"
+
+          if [[ "$TAG_STREAM" == "beta" ]]; then
+            # Find next beta number for this base version
+            BETA_N=$(git tag --list "${NEW_BASE}-beta.*" \
+              | grep -oE 'beta\.[0-9]+' \
+              | grep -oE '[0-9]+' \
+              | sort -n | tail -1 || echo "0")
+            BETA_N=$((BETA_N+1))
+            TAG_NAME="${NEW_BASE}-beta.${BETA_N}"
+          else
+            TAG_NAME="$NEW_BASE"
+          fi
+
+          echo "tag_name=$TAG_NAME"     >> "$GITHUB_OUTPUT"
+          echo "tag_stream=$TAG_STREAM" >> "$GITHUB_OUTPUT"
+          echo "bump_type=$BUMP"        >> "$GITHUB_OUTPUT"
+          echo "::notice::New tag: $TAG_NAME"
+
+      - name: Push git tag
+        env:
+          TAG_NAME: ${{ steps.bump.outputs.tag_name }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          git tag -a "$TAG_NAME" -m "chore(release): $TAG_NAME"
+          git push origin "$TAG_NAME"
+          echo "::notice::Pushed tag $TAG_NAME"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Publish npm package (optional)
+  # ──────────────────────────────────────────────────────────────────────────
+  publish:
+    name: Publish package
+    needs: tag
+    if: ${{ inputs.publish_package == true }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag_name }}
+          token: ${{ secrets.PAT }}
+
+      - name: Setup Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          registry-url: 'https://npm.pkg.github.com'
+          cache: npm
+          cache-dependency-path: ${{ inputs.monorepo_root }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.monorepo_root }}
+        run: npm ci
+
+      - name: Build before publish
+        if: ${{ inputs.build_before_publish == true }}
+        working-directory: ${{ inputs.monorepo_root }}
+        run: ${{ inputs.build_command }}
+
+      - name: Publish package
+        working-directory: ${{ inputs.monorepo_root }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # For beta tags, always publish with --tag beta
+          if [[ "${{ needs.tag.outputs.tag_stream }}" == "beta" ]]; then
+            ${{ inputs.publish_command }} -- --tag beta
+          else
+            ${{ inputs.publish_command }}
+          fi
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. Generate release notes + create GitHub Release
+  # ──────────────────────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: tag
+    runs-on: ubuntu-latest
+    outputs:
+      release_url: ${{ steps.create_release.outputs.html_url }}
+
+    steps:
+      - name: Checkout with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.tag.outputs.tag_name }}
+          token: ${{ secrets.PAT }}
+
+      - name: Generate release notes
+        id: notes
+        env:
+          NEW_TAG: ${{ needs.tag.outputs.tag_name }}
+          TAG_STREAM: ${{ needs.tag.outputs.tag_stream }}
+        run: |
+          set -euo pipefail
+
+          # Find previous tag for changelog range
+          if [[ "$TAG_STREAM" == "stable" ]]; then
+            PREV_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V | tail -2 | head -1 || echo "")
+          else
+            PREV_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*-beta.*' \
+              | sort -V | tail -2 | head -1 \
+              || git tag --list 'v[0-9]*.[0-9]*.[0-9]*' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V | tail -1 || echo "")
+          fi
+
+          if [[ -n "$PREV_TAG" ]]; then
+            LOG_RANGE="${PREV_TAG}..${NEW_TAG}"
+          else
+            LOG_RANGE="$NEW_TAG"
+          fi
+
+          bash scripts/generate-release-notes.sh "$NEW_TAG" "$LOG_RANGE" > release-notes.md
+          echo "notes_file=release-notes.md" >> "$GITHUB_OUTPUT"
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        id: create_release
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          TAG_NAME: ${{ needs.tag.outputs.tag_name }}
+          TAG_STREAM: ${{ needs.tag.outputs.tag_stream }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [[ "$TAG_STREAM" == "beta" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          gh release create "$TAG_NAME" \
+            --title "$TAG_NAME" \
+            --notes-file release-notes.md \
+            $PRERELEASE_FLAG \
+            --repo "${{ github.repository }}"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. Fire repository_dispatch to ops repo (optional, stage only)
+  # ──────────────────────────────────────────────────────────────────────────
+  dispatch_deploy:
+    name: Dispatch deploy
+    needs: [tag, release]
+    if: |
+      inputs.auto_deploy == true &&
+      needs.tag.outputs.tag_stream == 'beta' &&
+      inputs.deploy_ops_repo != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fire repository_dispatch to ops repo
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          OPS_REPO: ${{ inputs.deploy_ops_repo }}
+          EVENT_TYPE: ${{ inputs.deploy_event_type }}
+          TAG_NAME: ${{ needs.tag.outputs.tag_name }}
+          MANIFEST: ${{ inputs.deploy_manifest }}
+          TARGET_ENV: ${{ inputs.deploy_target_environment }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${OPS_REPO}/dispatches" \
+            -f event_type="$EVENT_TYPE" \
+            -f "client_payload[tag_name]=$TAG_NAME" \
+            -f "client_payload[manifest_name]=$MANIFEST" \
+            -f "client_payload[target_environment]=$TARGET_ENV"
+
+          echo "::notice::Dispatched $EVENT_TYPE to $OPS_REPO with tag $TAG_NAME"
+
+      - name: Write step summary
+        run: |
+          {
+            echo "### Deploy Dispatch Fired"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Target repo | \`${{ inputs.deploy_ops_repo }}\` |"
+            echo "| Event type | \`${{ inputs.deploy_event_type }}\` |"
+            echo "| Tag | \`${{ needs.tag.outputs.tag_name }}\` |"
+            echo "| Manifest | \`${{ inputs.deploy_manifest }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

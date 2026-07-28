@@ -1,0 +1,66 @@
+{
+  "$schema": "../../schemas/manifest.v1.schema.json",
+  "$comment": [
+    "Example: Node.js frontend deployed to Firebase Hosting.",
+    "",
+    "Single-app repo:  omit appRoot — Firebase 'public' dir = outputPath.",
+    "Monorepo:         set appRoot (e.g. 'apps/public-site') — Firebase",
+    "                  deploys from appRoot, 'public' = outputPath.",
+    "",
+    "configTemplate resolves to config/platforms/firebase/{stage|prod}.json",
+    "which uses ${BUILD_OUTPUT_PATH} — filled from build.outputPath at deploy time.",
+    "No 'layout' flag needed."
+  ],
+  "apiVersion": "deploy.platform/v1",
+  "kind": "Application",
+  "metadata": {
+    "name": "frontend-public-site",
+    "description": "Public-facing Next.js site deployed to Firebase Hosting.",
+    "labels": {
+      "team": "platform",
+      "tier": "frontend",
+      "schedule": "bi-weekly"
+    }
+  },
+  "source": {
+    "repository": "nabarun-ngo/ngo-nabarun-fe",
+    "buildRoot": ".",
+    "appRoot": "apps/public-site"
+  },
+  "build": {
+    "runtime": "node",
+    "nodeVersion": "24",
+    "install": "npm ci",
+    "command": "npm run build",
+    "outputPath": "out",
+    "env": {
+      "NODE_ENV": "prod",
+      "NEXT_TELEMETRY_DISABLED": "1"
+    }
+  },
+  "deploy": {
+    "platform": "firebase",
+    "configTemplate": "config/platforms/firebase/${DEPLOY_ENV}.json",
+    "secrets": {
+      "provider": "doppler",
+      "project": "frontend-public",
+      "bundleCli": false
+    }
+  },
+  "environments": {
+    "stage": {
+      "sourceRef": "stage",
+      "secrets": {
+        "config": "stg"
+      },
+      "healthCheckUrl": "https://ngonabarun-stage.web.app"
+    },
+    "prod": {
+      "sourceRef": "main",
+      "secrets": {
+        "config": "prd"
+      },
+      "healthCheckUrl": "https://nabarunngo.web.app"
+    }
+  }
+}

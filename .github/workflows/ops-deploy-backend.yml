@@ -1,0 +1,171 @@
+name: Ops — Deploy Backend (GAE)
+
+# Thin caller workflow for deploying a Node.js backend to Google App Engine.
+# Triggered manually, via repository_dispatch from an app repo CD pipeline,
+# or (never auto-dispatched to prod — prod always requires a deliberate manual run).
+#
+# Access control:
+#   stage → GitHub Environment 'stage'         (optional reviewers)
+#   prod  → GitHub Environment 'prod'          (required reviewers, main branch only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_name:
+        description: 'Application manifest (e.g. backend)'
+        required: true
+        type: choice
+        options:
+          - backend
+      target_environment:
+        description: 'Deploy target'
+        required: true
+        type: choice
+        options:
+          - stage
+          - prod
+      tag_name:
+        description: 'Tag to deploy (leave blank or "latest" to auto-resolve)'
+        required: false
+        default: 'latest'
+
+  repository_dispatch:
+    types: [Trigger-Deploy-Backend]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Normalize inputs across trigger types
+  # ──────────────────────────────────────────────────────────────────────────
+  context:
+    name: Setup context
+    uses: ./.github/workflows/reusable-setup-context.yml
+    with:
+      manifest_name: ${{ github.event_name == 'workflow_dispatch' && inputs.manifest_name || github.event.client_payload.manifest_name }}
+      target_environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || github.event.client_payload.target_environment || 'stage' }}
+      tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.event.client_payload.tag_name || 'latest' }}
+      workflow_type: deploy
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Resolve manifest fields
+  # ──────────────────────────────────────────────────────────────────────────
+  manifest:
+    name: Resolve manifest
+    needs: context
+    runs-on: ubuntu-latest
+    outputs:
+      app_name: ${{ steps.resolve.outputs.app_name }}
+      repository: ${{ steps.resolve.outputs.repository }}
+      build_root: ${{ steps.resolve.outputs.build_root }}
+      app_root: ${{ steps.resolve.outputs.app_root }}
+      node_version: ${{ steps.resolve.outputs.node_version }}
+      install_command: ${{ steps.resolve.outputs.install_command }}
+      build_command: ${{ steps.resolve.outputs.build_command }}
+      output_path: ${{ steps.resolve.outputs.output_path }}
+      bundle_includes: ${{ steps.resolve.outputs.bundle_includes }}
+      config_template: ${{ steps.resolve.outputs.config_template }}
+      gae_service: ${{ steps.resolve.outputs.gae_service }}
+      db_migrate: ${{ steps.resolve.outputs.db_migrate }}
+      db_command: ${{ steps.resolve.outputs.db_command }}
+      health_check_enabled: ${{ steps.resolve.outputs.health_check_enabled }}
+      health_check_path: ${{ steps.resolve.outputs.health_check_path }}
+      health_check_url: ${{ steps.resolve.outputs.health_check_url }}
+      doppler_bundle_cli: ${{ steps.resolve.outputs.doppler_bundle_cli }}
+      doppler_project: ${{ steps.resolve.outputs.doppler_project }}
+      doppler_config: ${{ steps.resolve.outputs.doppler_config }}
+      source_ref: ${{ steps.resolve.outputs.source_ref }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Resolve manifest
+        id: resolve
+        uses: ./.github/actions/resolve-manifest
+        with:
+          manifest_name: ${{ needs.context.outputs.manifest_name }}
+          target_environment: ${{ needs.context.outputs.target_environment }}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. Resolve git ref (auto or explicit)
+  # ──────────────────────────────────────────────────────────────────────────
+  resolve_ref:
+    name: Resolve git ref
+    needs: [context, manifest]
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Resolve ref
+        id: resolve
+        uses: ./.github/actions/resolve-git-ref
+        with:
+          tag_name: ${{ needs.context.outputs.tag_name }}
+          target_branch: ${{ needs.manifest.outputs.source_ref }}
+          repository: ${{ needs.manifest.outputs.repository }}
+          github_token: ${{ secrets.PAT }}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. Resolve GitHub Environment (trigger-aware)
+  # ──────────────────────────────────────────────────────────────────────────
+  resolve_env:
+    name: Resolve GitHub Environment
+    needs: context
+    runs-on: ubuntu-latest
+    outputs:
+      github_environment: ${{ steps.resolve.outputs.github_environment }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+
+      - name: Resolve environment
+        id: resolve
+        uses: ./.github/actions/resolve-deployment-environment
+        with:
+          trigger_type: ${{ needs.context.outputs.trigger_type }}
+          target_environment: ${{ needs.context.outputs.target_environment }}
+          workflow_type: deploy
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 5. Deploy (calls reusable GAE engine)
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    needs: [manifest, resolve_ref, resolve_env, context]
+    uses: ./.github/workflows/reusable-deploy-gae-node.yml
+    with:
+      app_name: ${{ needs.manifest.outputs.app_name }}
+      repository: ${{ needs.manifest.outputs.repository }}
+      build_root: ${{ needs.manifest.outputs.build_root }}
+      app_root: ${{ needs.manifest.outputs.app_root }}
+      node_version: ${{ needs.manifest.outputs.node_version }}
+      install_command: ${{ needs.manifest.outputs.install_command }}
+      build_command: ${{ needs.manifest.outputs.build_command }}
+      output_path: ${{ needs.manifest.outputs.output_path }}
+      bundle_includes: ${{ needs.manifest.outputs.bundle_includes }}
+      config_template: ${{ needs.manifest.outputs.config_template }}
+      gae_service: ${{ needs.manifest.outputs.gae_service }}
+      db_migrate: ${{ needs.manifest.outputs.db_migrate == 'true' }}
+      db_command: ${{ needs.manifest.outputs.db_command }}
+      health_check_enabled: ${{ needs.manifest.outputs.health_check_enabled == 'true' }}
+      health_check_path: ${{ needs.manifest.outputs.health_check_path }}
+      health_check_url: ${{ needs.manifest.outputs.health_check_url }}
+      doppler_bundle_cli: ${{ needs.manifest.outputs.doppler_bundle_cli == 'true' }}
+      doppler_project: ${{ needs.manifest.outputs.doppler_project }}
+      doppler_config: ${{ needs.manifest.outputs.doppler_config }}
+      ref: ${{ needs.resolve_ref.outputs.ref }}
+      github_environment: ${{ needs.resolve_env.outputs.github_environment }}
+      target_environment: ${{ needs.context.outputs.target_environment }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}

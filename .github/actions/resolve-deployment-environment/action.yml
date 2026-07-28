@@ -1,0 +1,104 @@
+name: Resolve Deployment Environment
+description: >
+  Map (triggerType, targetEnvironment) to a GitHub Environment name.
+  Scheduled runs are routed to auto-approved *-scheduled environments.
+  Manual / dispatch runs are routed to protected environments.
+
+  Routing table:
+    schedule  + deploy  + stage → stage-scheduled
+    schedule  + tests           → tests-scheduled
+    manual/dispatch + stage     → stage
+    manual/dispatch + prod      → prod
+
+inputs:
+  trigger_type:
+    description: How the workflow was triggered (schedule | workflow_dispatch | repository_dispatch).
+    required: true
+  target_environment:
+    description: Logical environment from the manifest (stage | prod).
+    required: true
+  workflow_type:
+    description: >
+      'deploy' or 'tests'. Distinguishes scheduled deploy from scheduled test runs
+      so they can map to different GitHub Environments (stage-scheduled vs tests-scheduled).
+    required: false
+    default: deploy
+
+outputs:
+  github_environment:
+    description: GitHub Environment name to bind the calling job to.
+    value: ${{ steps.route.outputs.github_environment }}
+  requires_approval:
+    description: '"true" if the resolved environment has required reviewers.'
+    value: ${{ steps.route.outputs.requires_approval }}
+  approval_mode:
+    description: '"auto" for scheduled runs, "manual" for dispatch/manual runs.'
+    value: ${{ steps.route.outputs.approval_mode }}
+
+runs:
+  using: composite
+  steps:
+    - name: Route trigger to GitHub Environment
+      id: route
+      shell: bash
+      env:
+        TRIGGER_TYPE: ${{ inputs.trigger_type }}
+        TARGET_ENV: ${{ inputs.target_environment }}
+        WORKFLOW_TYPE: ${{ inputs.workflow_type }}
+      run: |
+        set -euo pipefail
+
+        GITHUB_ENV_NAME=""
+        REQUIRES_APPROVAL="false"
+        APPROVAL_MODE="manual"
+
+        if [[ "$TRIGGER_TYPE" == "schedule" ]]; then
+          APPROVAL_MODE="auto"
+          if [[ "$WORKFLOW_TYPE" == "tests" ]]; then
+            GITHUB_ENV_NAME="tests-scheduled"
+          else
+            # Scheduled deploys only go to stage-scheduled (never prod)
+            if [[ "$TARGET_ENV" == "prod" ]]; then
+              echo "::error::Scheduled deploys to prod are disabled. Use a manual workflow_dispatch instead."
+              exit 1
+            fi
+            GITHUB_ENV_NAME="stage-scheduled"
+          fi
+        else
+          APPROVAL_MODE="manual"
+          case "$TARGET_ENV" in
+            stage)
+              GITHUB_ENV_NAME="stage"
+              REQUIRES_APPROVAL="false"
+              ;;
+            prod)
+              GITHUB_ENV_NAME="prod"
+              REQUIRES_APPROVAL="true"
+              ;;
+            *)
+              echo "::error::Unknown target_environment: '$TARGET_ENV'. Expected 'stage' or 'prod'."
+              exit 1
+              ;;
+          esac
+        fi
+
+        echo "::notice::Resolved GitHub Environment: $GITHUB_ENV_NAME (approval_mode: $APPROVAL_MODE)"
+        echo "github_environment=$GITHUB_ENV_NAME"  >> "$GITHUB_OUTPUT"
+        echo "requires_approval=$REQUIRES_APPROVAL" >> "$GITHUB_OUTPUT"
+        echo "approval_mode=$APPROVAL_MODE"         >> "$GITHUB_OUTPUT"
+
+    - name: Write step summary
+      shell: bash
+      run: |
+        {
+          echo "### Environment Routing"
+          echo ""
+          echo "| Field | Value |"
+          echo "|-------|-------|"
+          echo "| Trigger type | \`${{ inputs.trigger_type }}\` |"
+          echo "| Target environment | \`${{ inputs.target_environment }}\` |"
+          echo "| Workflow type | \`${{ inputs.workflow_type }}\` |"
+          echo "| **GitHub Environment** | **\`${{ steps.route.outputs.github_environment }}\`** |"
+          echo "| Requires approval | ${{ steps.route.outputs.requires_approval }} |"
+          echo "| Approval mode | \`${{ steps.route.outputs.approval_mode }}\` |"
+        } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,241 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "deploy.platform/v1",
+  "title": "Deploy Platform Manifest v1",
+  "description": "Contract for a deployable application. Describes source layout, build settings, deploy target, database migrations, and per-environment overrides.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "source", "build", "deploy", "environments"],
+  "$comment": "source.layout is intentionally absent — the platform derives behavior from buildRoot and appRoot only.",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path to the JSON schema file"
+    },
+    "$comment": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Developer comments and notes"
+    },
+    "apiVersion": {
+      "type": "string",
+      "const": "deploy.platform/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "Application"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$",
+          "description": "Unique, lowercase, hyphenated application identifier used in deployment artifact names."
+        },
+        "description": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["repository"],
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/]+/[^/]+$",
+          "description": "GitHub repository in org/repo format."
+        },
+        "buildRoot": {
+          "type": "string",
+          "default": ".",
+          "description": "Working directory for install/build commands. For a monorepo workspace this is the repo root '.'; for a single-app repo it is also '.'. Change only if install must run from a subdirectory."
+        },
+        "appRoot": {
+          "type": "string",
+          "description": "Optional. Path to the app inside the repo (relative to repo root). When set, the deploy artifact is staged from <appRoot>/<build.outputPath>. Omit for repos where the build output is directly under buildRoot."
+        },
+        "workspacePackages": {
+          "type": "string",
+          "description": "Optional. Glob pattern for npm workspace packages (e.g. 'packages/*'). Informational — used by the build command, not by the platform directly."
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "required": ["runtime", "command"],
+      "additionalProperties": false,
+      "properties": {
+        "runtime": {
+          "type": "string",
+          "enum": ["node"],
+          "description": "Runtime language. v1 supports node only."
+        },
+        "nodeVersion": {
+          "type": "string",
+          "default": "20",
+          "description": "Node.js major version."
+        },
+        "install": {
+          "type": "string",
+          "default": "npm ci",
+          "description": "Dependency install command."
+        },
+        "command": {
+          "type": "string",
+          "description": "Build command (e.g. 'npm run build')."
+        },
+        "outputPath": {
+          "type": "string",
+          "default": "dist",
+          "description": "Build output directory (relative to buildRoot)."
+        },
+        "bundleIncludes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Additional directories to include in the deploy bundle (e.g. ['prisma'])."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Static build-time environment variables (non-secret)."
+        }
+      }
+    },
+    "deploy": {
+      "type": "object",
+      "required": ["platform"],
+      "additionalProperties": false,
+      "properties": {
+        "platform": {
+          "type": "string",
+          "enum": ["gae", "firebase"],
+          "description": "Deploy target. gae = Google App Engine (backend), firebase = Firebase Hosting (frontend)."
+        },
+        "configTemplate": {
+          "type": "string",
+          "description": "Path to app.yaml.tpl (GAE) or firebase.json template. Relative to repo root."
+        },
+        "serviceKey": {
+          "type": "string",
+          "description": "Key within environments[env] that holds the GAE service name override."
+        },
+        "secrets": {
+          "$ref": "#/definitions/deploySecrets"
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "migrate": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to run a migration step before deploy. Migration must succeed before GAE traffic promotion."
+        },
+        "command": {
+          "type": "string",
+          "description": "Migration command (e.g. 'npx prisma migrate deploy')."
+        }
+      },
+      "if": { "properties": { "migrate": { "const": true } } },
+      "then": { "required": ["command"] }
+    },
+    "healthCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "path": {
+          "type": "string",
+          "default": "/health",
+          "description": "HTTP path to poll after deployment."
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "default": 120
+        }
+      }
+    },
+    "environments": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(stage|prod|[a-z][a-z0-9-]*)$": {
+          "$ref": "#/definitions/environmentBlock"
+        }
+      },
+      "description": "Per-environment overrides keyed by logical environment name (stage, prod, etc.)."
+    }
+  },
+  "definitions": {
+    "deploySecrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional Doppler secret integration for this application.",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["none", "doppler"],
+          "default": "none",
+          "description": "Secret provider. 'none' = rely on GitHub Environment secrets only. 'doppler' = activate Doppler CLI integration."
+        },
+        "project": {
+          "type": "string",
+          "description": "Doppler project name (required when provider is doppler)."
+        },
+        "bundleCli": {
+          "type": "boolean",
+          "default": false,
+          "description": "Bundle the Doppler CLI into the deploy artifact so the GAE container can pull secrets at startup via start.sh."
+        }
+      },
+      "if": { "properties": { "provider": { "const": "doppler" } } },
+      "then": { "required": ["project"] }
+    },
+    "environmentSecrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-environment Doppler secret override.",
+      "properties": {
+        "config": {
+          "type": "string",
+          "description": "Doppler config name for this environment (e.g. 'stage_api', 'prod_api')."
+        }
+      }
+    },
+    "environmentBlock": {
+      "type": "object",
+      "required": ["sourceRef"],
+      "additionalProperties": true,
+      "description": "Per-environment configuration block. Additional keys (e.g. gaeService) are application-specific and referenced via deploy.serviceKey.",
+      "properties": {
+        "sourceRef": {
+          "type": "string",
+          "description": "Git branch or tag to deploy from (e.g. 'stage', 'main', 'v1.2.3'). 'latest' triggers auto-resolution."
+        },
+        "secrets": {
+          "$ref": "#/definitions/environmentSecrets"
+        },
+        "healthCheckUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Full URL to health-check endpoint for this environment."
+        }
+      }
+    }
+  }
+}

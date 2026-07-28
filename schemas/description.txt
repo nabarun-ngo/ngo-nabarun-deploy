@@ -1,0 +1,61 @@
+Here is a detailed explanation of each field in the backend.json manifest file. This file acts as a configuration blueprint for deploying a Node.js REST API to Google App Engine (GAE).
+
+Root Level Fields
+$comment: A built-in field used for adding developer notes. In this file, it explains the behavior of the deployment system depending on whether the repository is a single app or a monorepo (which is determined by the presence of appRoot).
+apiVersion: deploy.platform/v1 - Specifies the version of the schema that this configuration file adheres to.
+kind: Application - Defines the type of resource being declared.
+metadata
+Contains basic descriptive information about the application.
+
+name: "backend-api" - The unique identifier for this application.
+description: A human-readable summary of what the application does.
+labels: Key-value pairs (team: platform, tier: backend) used to categorize the application. This is useful for filtering or billing purposes in deployment pipelines.
+source
+Defines where the application's source code is located and how it is structured within the repository.
+
+repository: "YOUR_ORG/backend-repo" - The Git repository where the source code resides.
+buildRoot: "." - The directory from which build commands (like npm ci) should be executed. Here, . means the root of the workspace.
+appRoot: "apps/api" - The specific directory where this application's code lives. Because this is set, it implies the project is structured as a monorepo. The final output is staged from appRoot/outputPath.
+build
+Provides the necessary instructions for preparing the application for deployment.
+
+runtime: "node" - The execution environment the app requires.
+nodeVersion: "20" - The specific version of Node.js to use during the build and execution.
+install: "npm ci" - The command used to install dependencies cleanly.
+command: "npm run build --workspace=apps/api" - The command to build or compile the application. It specifically targets the apps/api workspace.
+outputPath: "dist" - The directory where the compiled/built artifacts are placed, relative to the appRoot.
+bundleIncludes: ["prisma"] - Additional folders or files that should be packaged along with the compiled output (in this case, Prisma schema/client files needed for database access).
+deploy
+Configuration specific to the target hosting platform.
+
+platform: "gae" - Indicates the application will be deployed to Google App Engine.
+configTemplate: "config/platforms/gae/app.yaml.tpl" - The path to a template file that will be used to generate the final app.yaml required by GAE.
+serviceKey: "gaeService" - Defines the key name that will be used in the environments section to specify the GAE service name.
+secrets: Configuration for securely injecting environment variables.
+provider: "doppler" - The secrets management service being used.
+project: "backend-api" - The name of the project inside Doppler.
+bundleCli: true - Injects the Doppler CLI into the deployment bundle so it can be used to fetch secrets at runtime.
+database
+Settings related to database management during the deployment lifecycle.
+
+migrate: true - Indicates that a database migration should be executed as part of the deployment.
+command: "npx prisma migrate deploy" - The exact command to run the migrations.
+healthCheck
+Configures a post-deployment verification step to ensure the app is running correctly.
+
+enabled: true - Turns on the health check feature.
+path: "/health" - The endpoint path to ping to verify the app's health.
+timeoutSeconds: 120 - The pipeline will wait up to 2 minutes for the health check to return a successful status before failing the deployment.
+environments
+Contains environment-specific overrides for different deployment stages.
+
+stage (Staging Environment)
+sourceRef: "stage" - The Git branch or tag that should be deployed to this environment.
+gaeService: "api-staging" - The specific Google App Engine service name for staging.
+secrets.config: "stg" - Tells Doppler to fetch the staging secrets.
+healthCheckUrl: The full URL used to perform the health check after a staging deployment.
+prod (Production Environment)
+sourceRef: "main" - The Git branch or tag (usually main or master) deployed to production.
+gaeService: "api" - The main Google App Engine service name.
+secrets.config: "prd" - Tells Doppler to fetch the production secrets.
+healthCheckUrl: The full URL used to perform the health check after a production deployment.

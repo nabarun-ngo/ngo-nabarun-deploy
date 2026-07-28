@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deploy Platform — Operations Portal</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #238636;
+      --accent-hover: #2ea043;
+      --link: #58a6ff;
+      --warning: #d29922;
+      --danger: #da3633;
+      --badge-green: #1a7f37;
+      --badge-blue: #1158c7;
+      --badge-orange: #9a6700;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 20px;
+      margin-bottom: 32px;
+    }
+
+    header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header p {
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .meta {
+      display: flex;
+      gap: 16px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .meta span {
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      transition: border-color 0.2s;
+    }
+
+    .card:hover { border-color: var(--link); }
+
+    .card h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card p {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .card a.btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--link);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      transition: background 0.15s;
+    }
+
+    .card a.btn:hover { background: rgba(88,166,255,0.1); }
+
+    .card a.btn.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .card a.btn.primary:hover { background: var(--accent-hover); }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .env-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-bottom: 32px;
+    }
+
+    .env-table th {
+      text-align: left;
+      padding: 10px 14px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .env-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .env-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+    }
+
+    .badge-green  { background: var(--badge-green);  color: #fff; }
+    .badge-blue   { background: var(--badge-blue);   color: #fff; }
+    .badge-orange { background: var(--badge-orange); color: #fff; }
+
+    code {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      background: rgba(255,255,255,0.08);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    footer {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>
+      <svg width="24" height="24" viewBox="0 0 16 16" fill="#238636">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
+      Deploy Platform v1
+    </h1>
+    <p>Production-grade, manifest-driven CI/CD for Node.js applications on GCP.</p>
+    <div class="meta">
+      <span>Built: 2026-07-28 19:40 UTC</span>
+      <span>Repo: nabarun-ngo/ngo-nabarun-deploy</span>
+      <span>Run: <a href="https://github.com/nabarun-ngo/ngo-nabarun-deploy/actions/runs/30392927966" style="color:inherit">https://github.com/nabarun-ngo/ngo-nabarun-deploy/actions/runs/30392927966</a></span>
+    </div>
+  </header>
+
+  <h2 class="section-title">Quick Links</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>📊 Latest Test Report</h3>
+      <p>Allure report from the most recent test run, published to GitHub Pages.</p>
+      <a href="allure-report/index.html" class="btn primary">View Allure Report →</a>
+    </div>
+
+    <div class="card">
+      <h3>🚀 Deploy Backend</h3>
+      <p>Trigger a manual backend deploy via <code>ops-deploy-backend.yml</code> workflow.</p>
+      <a href="../../actions/workflows/ops-deploy-backend.yml" class="btn">Run Workflow →</a>
+    </div>
+
+    <div class="card">
+      <h3>🌐 Deploy Frontend</h3>
+      <p>Trigger a frontend deploy via <code>ops-deploy-frontend.yml</code> workflow.</p>
+      <a href="../../actions/workflows/ops-deploy-frontend.yml" class="btn">Run Workflow →</a>
+    </div>
+
+    <div class="card">
+      <h3>🧪 Run Tests</h3>
+      <p>Manually trigger a Cucumber test run with custom tags and environment.</p>
+      <a href="../../actions/workflows/ops-run-tests.yml" class="btn">Run Tests →</a>
+    </div>
+
+    <div class="card">
+      <h3>🛠 GCP Operations</h3>
+      <p>Download logs, restart services, view/clean deployed GAE versions interactively.</p>
+      <a href="../../actions/workflows/ops-gcp-ops.yml" class="btn">GCP Ops Hub →</a>
+    </div>
+
+    <div class="card">
+      <h3>🧹 GCP Cleanup</h3>
+      <p>Scheduled (Mon/Wed/Fri) and manual cleanup of stale GAE, GCS, and AR resources.</p>
+      <a href="../../actions/workflows/ops-gcp-cleanup.yml" class="btn">Cleanup →</a>
+    </div>
+  </div>
+
+  <h2 class="section-title">GitHub Environments</h2>
+  <table class="env-table">
+    <thead>
+      <tr>
+        <th>Environment</th>
+        <th>Used when</th>
+        <th>Approval</th>
+        <th>Secrets held</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>stage</code></td>
+        <td>Manual/dispatch deploy or tests to stage</td>
+        <td><span class="badge badge-blue">Optional</span></td>
+        <td>GCP_*, FB_*, DOPPLER_*</td>
+      </tr>
+      <tr>
+        <td><code>prod</code></td>
+        <td>Manual deploy to production</td>
+        <td><span class="badge badge-orange">Required</span></td>
+        <td>GCP_*, FB_*, DOPPLER_*</td>
+      </tr>
+      <tr>
+        <td><code>tests-scheduled</code></td>
+        <td>Cron-triggered test runs</td>
+        <td><span class="badge badge-green">Auto</span></td>
+        <td>DOPPLER_TOKEN</td>
+      </tr>
+      <tr>
+        <td><code>stage-scheduled</code></td>
+        <td>Bi-weekly public site deploy (cron)</td>
+        <td><span class="badge badge-green">Auto</span></td>
+        <td>FB_*, DOPPLER_*</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="section-title">Manifests</h2>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:12px">No <code>layout</code> flag — behavior inferred from <code>buildRoot</code> + optional <code>appRoot</code>. Works for any directory structure.</p>
+  <table class="env-table">
+    <thead>
+      <tr><th>Manifest</th><th>Platform</th><th>Environments</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>backend</code></td><td>GAE (App Engine)</td><td>stage, prod</td></tr>
+      <tr><td><code>frontend</code></td><td>Firebase Hosting</td><td>stage, prod</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    <span>Deploy Platform v1 — Greenfield Production Build</span>
+    <span>Pages: <a href="allure-report/">allure-report/</a> | <a href=".">portal/</a></span>
+  </footer>
+</body>
+</html>

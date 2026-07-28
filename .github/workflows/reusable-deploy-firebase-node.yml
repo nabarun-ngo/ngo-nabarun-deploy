@@ -130,7 +130,7 @@ jobs:
 
       - name: Install Doppler CLI
         if: ${{ inputs.secrets_provider == 'doppler' }}
-        uses: dopplerhq/cli-action@v3
+        uses: dopplerhq/cli-action@v4
 
       - name: Build (with Doppler secret injection)
         if: ${{ inputs.secrets_provider == 'doppler' }}

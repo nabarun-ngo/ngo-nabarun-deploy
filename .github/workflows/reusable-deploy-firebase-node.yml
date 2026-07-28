@@ -96,6 +96,7 @@ jobs:
   build:
     name: Build — ${{ inputs.app_name }}
     runs-on: ubuntu-latest
+    environment: ${{case(inputs.secrets_provider == 'doppler',inputs.github_environment,'default')}}
     outputs:
       artifact_name: ${{ steps.set_artifact.outputs.artifact_name }}
 

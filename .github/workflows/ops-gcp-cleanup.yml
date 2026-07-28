@@ -183,7 +183,7 @@ jobs:
 
           STAGING_BUCKET="staging.${GCP_PROJECT_ID}.appspot.com"
           CUTOFF_DATE=$(date -u -d "${STALE_DAYS} days ago" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
-            || date -u -v-${STALE_DAYS}d '+%Y-%m-%dT%H:%M:%SZ')
+            || date -u -v-"${STALE_DAYS}d" '+%Y-%m-%dT%H:%M:%SZ')
 
           STALE_FILES=$(gsutil ls -l "gs://${STAGING_BUCKET}/**" 2>/dev/null \
             | awk -v cutoff="$CUTOFF_DATE" 'NF==3 && $2 < cutoff {print $3}' \

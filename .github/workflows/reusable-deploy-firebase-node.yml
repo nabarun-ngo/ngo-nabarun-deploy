@@ -121,7 +121,7 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
           cache: npm
-          cache-dependency-path: app-source/${{ inputs.build_root }}/package-lock.json
+          cache-dependency-path: ${{ inputs.build_root == '.' && 'app-source/package-lock.json' || format('app-source/{0}/package-lock.json', inputs.build_root) }}
 
       - name: Install dependencies
         if: ${{ inputs.secrets_provider != 'doppler' }}

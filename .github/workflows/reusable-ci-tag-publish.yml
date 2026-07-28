@@ -216,7 +216,7 @@ jobs:
           node-version: ${{ inputs.node_version }}
           registry-url: 'https://npm.pkg.github.com'
           cache: npm
-          cache-dependency-path: ${{ inputs.monorepo_root }}/package-lock.json
+          cache-dependency-path: ${{ inputs.monorepo_root == '.' && 'package-lock.json' || format('{0}/package-lock.json', inputs.monorepo_root) }}
 
       - name: Install dependencies
         working-directory: ${{ inputs.monorepo_root }}

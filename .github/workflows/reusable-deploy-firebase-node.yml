@@ -227,7 +227,6 @@ jobs:
           repoToken: ${{ github.token }}
           firebaseServiceAccount: ${{ secrets.FB_SA_KEY }}
           projectId: ${{ secrets.FB_PROJECT_ID }}
-          target: ${{ inputs.target_environment }}
           channelId: live
           entryPoint: app-build
 

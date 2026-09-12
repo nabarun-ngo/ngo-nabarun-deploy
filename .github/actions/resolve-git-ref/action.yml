@@ -10,7 +10,7 @@ description: >
 inputs:
   tag_name:
     description: >
-      Explicit tag to deploy (e.g. 'v1.2.3', 'v1.2.3-beta.4').
+      Explicit tag to deploy (e.g. '1.2.3', 'v1.2.3', '1.2.3-beta.4').
       Pass 'latest' or leave empty to trigger auto-resolution.
     required: false
     default: 'latest'
@@ -85,24 +85,25 @@ runs:
           exit 1
         fi
 
+        pick_latest() {
+          local pattern="$1"
+          echo "$ALL_TAGS" | grep -E "$pattern" | awk '{
+            n = $0
+            sub(/^v/, "", n)
+            print n "\t" $0
+          }' | sort -t $'\t' -k1,1V | tail -1 | cut -f2-
+        }
+
+        STABLE_PAT='^v?[0-9]+\.[0-9]+\.[0-9]+$'
+        PRE_PAT='^v?[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$'
+
         if [[ "$TARGET_BRANCH" == "main" || "$TARGET_BRANCH" == "production" || "$TARGET_BRANCH" == "prod" ]]; then
-          # Stable: no pre-release suffix (vN.N.N only)
-          RESOLVED=$(echo "$ALL_TAGS" \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-            | sort -V \
-            | tail -1)
+          RESOLVED=$(pick_latest "$STABLE_PAT" || true)
           STREAM="stable"
         else
-          # Beta stream: pre-release tags first, fall back to latest stable
-          RESOLVED=$(echo "$ALL_TAGS" \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.' \
-            | sort -V \
-            | tail -1)
+          RESOLVED=$(pick_latest "$PRE_PAT" || true)
           if [[ -z "$RESOLVED" ]]; then
-            RESOLVED=$(echo "$ALL_TAGS" \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-              | sort -V \
-              | tail -1)
+            RESOLVED=$(pick_latest "$STABLE_PAT" || true)
             STREAM="stable"
           else
             STREAM="beta"

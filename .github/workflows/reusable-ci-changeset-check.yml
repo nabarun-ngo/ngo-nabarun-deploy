@@ -1,0 +1,124 @@
+name: Reusable — CI Changeset check
+
+# Called by library repos on pull_request.
+# If paths under packages_filter changed, require a Changeset vs the PR base.
+# Skips github-actions[bot] so Version Packages PRs are not blocked.
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: Node.js version.
+        type: string
+        required: false
+        default: '22'
+      working_directory:
+        description: Directory with package-lock.json and .changeset (repo-relative).
+        type: string
+        required: false
+        default: '.'
+      packages_filter:
+        description: Glob that counts as a package change (dorny/paths-filter).
+        type: string
+        required: false
+        default: 'packages/**'
+      install_command:
+        description: Install command when package files changed.
+        type: string
+        required: false
+        default: 'npm ci'
+      use_gh_env:
+        description: Bind the job to a GitHub Environment (reviewers / env secrets).
+        type: boolean
+        required: false
+        default: false
+      gh_env:
+        description: GitHub Environment name when use_gh_env is true (e.g. stage, prod).
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changeset-check:
+    name: Require changeset for package changes
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login != 'github-actions[bot]'
+    environment: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
+
+    steps:
+      - name: Log run context
+        env:
+          LOG_TITLE: Changeset check
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+          LOG_EXTRA: |
+            base_ref=${{ github.base_ref }}
+            head_ref=${{ github.head_ref }}
+            pr=${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          echo "::notice::${LOG_TITLE} — PR #${{ github.event.pull_request.number }} base=${GITHUB_BASE_REF} sha=${GITHUB_SHA:0:7}"
+          echo "::group::${LOG_TITLE} context"
+          echo "event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF} sha=${GITHUB_SHA}"
+          echo "job=${GITHUB_JOB} actor=${GITHUB_ACTOR} run=${GITHUB_RUN_ID}"
+          echo "${LOG_INPUTS}"
+          echo "${LOG_EXTRA}"
+          echo "::endgroup::"
+
+      - name: Require gh_env
+        if: ${{ inputs.use_gh_env }}
+        env:
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$GH_ENV" ]]; then
+            echo "::error::gh_env is required when use_gh_env is true"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect package changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            packages:
+              - ${{ inputs.packages_filter }}
+
+      - name: Log package-change result
+        env:
+          PACKAGES_CHANGED: ${{ steps.changes.outputs.packages }}
+        run: |
+          echo "::notice::packages_filter=${{ inputs.packages_filter }} changed=${PACKAGES_CHANGED}"
+          echo "### Changeset check" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "packages changed: \`${PACKAGES_CHANGED}\` (filter \`${{ inputs.packages_filter }}\`)" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$PACKAGES_CHANGED" != "true" ]]; then
+            echo "::notice::No package path changes; changeset status skipped."
+          fi
+
+      - name: Setup Node.js
+        if: steps.changes.outputs.packages == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working_directory == '.' && 'package-lock.json' || format('{0}/package-lock.json', inputs.working_directory) }}
+
+      - name: Install dependencies
+        if: steps.changes.outputs.packages == 'true'
+        working-directory: ${{ inputs.working_directory }}
+        run: ${{ inputs.install_command }}
+
+      - name: Verify changesets
+        if: steps.changes.outputs.packages == 'true'
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          echo "::notice::npx changeset status --since=origin/${{ github.base_ref }}"
+          npx changeset status --since=origin/${{ github.base_ref }}

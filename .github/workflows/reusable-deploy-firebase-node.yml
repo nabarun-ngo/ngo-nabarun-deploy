@@ -61,10 +61,16 @@ on:
         description: Git ref (tag or branch) to deploy.
         type: string
         required: true
-      github_environment:
-        description: GitHub Environment name.
+      use_gh_env:
+        description: Bind jobs to a GitHub Environment (reviewers / env secrets).
+        type: boolean
+        required: false
+        default: true
+      gh_env:
+        description: GitHub Environment name when use_gh_env is true (e.g. stage, prod).
         type: string
-        required: true
+        required: false
+        default: ''
       target_environment:
         description: Logical environment (stage | prod) — used for config template resolution.
         type: string
@@ -96,11 +102,30 @@ jobs:
   build:
     name: Build — ${{ inputs.app_name }}
     runs-on: ubuntu-latest
-    environment: ${{case(inputs.secrets_provider == 'doppler',inputs.github_environment,'default')}}
+    environment: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
     outputs:
       artifact_name: ${{ steps.set_artifact.outputs.artifact_name }}
 
     steps:
+      - name: Log run context
+        env:
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          echo "::notice::Firebase build — ${{ inputs.app_name }} ref=${{ inputs.ref }} secrets_provider=${{ inputs.secrets_provider }}"
+          echo "::group::Firebase build context"
+          echo "${LOG_INPUTS}"
+          echo "::endgroup::"
+
+      - name: Require gh_env
+        if: ${{ inputs.use_gh_env }}
+        env:
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$GH_ENV" ]]; then
+            echo "::error::gh_env is required when use_gh_env is true"
+            exit 1
+          fi
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -116,6 +141,7 @@ jobs:
         id: set_artifact
         run: |
           echo "artifact_name=firebase-bundle-${{ inputs.app_name }}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+          echo "::notice::artifact_name=firebase-bundle-${{ inputs.app_name }}-${{ github.run_id }}"
 
       - name: Setup Node.js ${{ inputs.node_version }}
         uses: actions/setup-node@v7
@@ -163,6 +189,21 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+      - name: Build outcome
+        if: always()
+        run: |
+          echo "::notice::Firebase build ${{ job.status }} app=${{ inputs.app_name }}"
+          {
+            echo "### Firebase Build — ${{ inputs.app_name }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Status | ${{ job.status }} |"
+            echo "| secrets_provider | \`${{ inputs.secrets_provider }}\` |"
+            echo "| Ref | \`${{ inputs.ref }}\` |"
+            echo "| Artifact | \`${{ steps.set_artifact.outputs.artifact_name }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # ──────────────────────────────────────────────────────────────────────────
   # 2. Deploy
   # ──────────────────────────────────────────────────────────────────────────
@@ -171,12 +212,32 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment:
-      name: ${{ inputs.github_environment }}
+      name: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
       url: ${{ steps.firebase_deploy.outputs.details_url }}
     outputs:
       hosting_url: ${{ steps.firebase_deploy.outputs.details_url }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Firebase deploy — ${{ inputs.app_name }} artifact=${{ needs.build.outputs.artifact_name }} gh_env=${{ inputs.gh_env }}"
+          echo "::group::Firebase deploy context"
+          echo "ref=${{ inputs.ref }}"
+          echo "target_environment=${{ inputs.target_environment }}"
+          echo "firebase_site=${{ inputs.firebase_site }}"
+          echo "artifact=${{ needs.build.outputs.artifact_name }}"
+          echo "::endgroup::"
+
+      - name: Require gh_env
+        if: ${{ inputs.use_gh_env }}
+        env:
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$GH_ENV" ]]; then
+            echo "::error::gh_env is required when use_gh_env is true"
+            exit 1
+          fi
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -200,10 +261,13 @@ jobs:
         run: |
           if [[ -n "${{ inputs.firebase_site }}" ]]; then
             echo "site=${{ inputs.firebase_site }}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Firebase site from input: ${{ inputs.firebase_site }}"
           elif [[ "${{ inputs.target_environment }}" == "prod" ]]; then
             echo "site=${{ secrets.FB_PROJECT_ID }}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Firebase site defaulted to FB_PROJECT_ID (prod)"
           else
             echo "site=${{ secrets.FB_PROJECT_ID }}-${{ inputs.target_environment }}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Firebase site defaulted to FB_PROJECT_ID-${{ inputs.target_environment }}"
           fi
 
       - name: Render firebase.json from template
@@ -241,7 +305,7 @@ jobs:
             echo "|-------|-------|"
             echo "| App | \`${{ inputs.app_name }}\` |"
             echo "| Source ref | \`${{ inputs.ref }}\` |"
-            echo "| Environment | \`${{ inputs.github_environment }}\` |"
+            echo "| Environment | \`${{ inputs.gh_env }}\` |"
             echo "| Hosting URL | ${{ steps.firebase_deploy.outputs.details_url }} |"
             echo "| Status | ${{ job.status }} |"
           } >> "$GITHUB_STEP_SUMMARY"

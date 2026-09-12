@@ -1,12 +1,8 @@
 name: Ops — Run Tests
 
 # Thin caller for executing Cucumber tests with Allure reporting.
-# Supports manual dispatch, scheduled cron profiles, and post-deploy
-# repository_dispatch hooks.
-#
-# Scheduled runs bind to 'tests-scheduled' environment (auto-approved).
-# Manual prod-targeted runs would bind to 'prod' — but in v1, tests always
-# run against stage. Prod-targeted test runs require an explicit future opt-in.
+# Manual dispatch and scheduled cron profiles. Manual prod binds to GitHub
+# Environment 'prod' (reviewers). Scheduled runs bind to 'tests-scheduled'.
 
 on:
   workflow_dispatch:
@@ -24,13 +20,10 @@ on:
           - stage
           - prod
       parallelism:
-        description: 'Parallel shards'
+        description: 'Parallel shards (forced to 1 when target is prod)'
         required: false
         type: number
         default: 3
-
-  repository_dispatch:
-    types: [Trigger-Run-Tests]
 
   schedule:
     # Nightly smoke tests against stage at 03:00 UTC
@@ -40,25 +33,25 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
-  # ──────────────────────────────────────────────────────────────────────────
-  # 1. Determine test profile (schedule → from tests.json, dispatch → payload)
-  # ──────────────────────────────────────────────────────────────────────────
   profile:
     name: Resolve test profile
     runs-on: ubuntu-latest
     outputs:
-      test_tags: ${{ steps.resolve.outputs.test_tags }}
-      target_environment: ${{ steps.resolve.outputs.target_environment }}
-      parallelism: ${{ steps.resolve.outputs.parallelism }}
-      timeout_minutes: ${{ steps.resolve.outputs.timeout_minutes }}
-      github_environment: ${{ steps.resolve.outputs.github_environment }}
-      report_title: ${{ steps.resolve.outputs.report_title }}
+      test_tags: ${{ steps.finalize.outputs.test_tags }}
+      target_environment: ${{ steps.finalize.outputs.target_environment }}
+      parallelism: ${{ steps.finalize.outputs.parallelism }}
+      timeout_minutes: ${{ steps.finalize.outputs.timeout_minutes }}
+      gh_env: ${{ steps.route.outputs.gh_env }}
+      doppler_config: ${{ steps.finalize.outputs.doppler_config }}
+      report_title: ${{ steps.finalize.outputs.report_title }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Resolve test profile event=${GITHUB_EVENT_NAME} schedule=${{ github.event.schedule }}"
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -67,54 +60,54 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CRON_SCHEDULE: ${{ github.event.schedule }}
-          DISPATCH_TAGS: ${{ github.event.client_payload.tags }}
-          DISPATCH_ENV: ${{ github.event.client_payload.target_environment }}
           INPUT_TAGS: ${{ github.event_name == 'workflow_dispatch' && inputs.test_tags || '' }}
           INPUT_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || '' }}
           INPUT_PARALLELISM: ${{ github.event_name == 'workflow_dispatch' && inputs.parallelism || '3' }}
         run: |
           set -euo pipefail
 
-          # Default profile values
           TEST_TAGS="@smoke"
           TARGET_ENV="stage"
           PARALLELISM=3
           TIMEOUT=60
-          GH_ENV="tests-scheduled"
           REPORT_TITLE="Smoke Tests"
 
           case "$EVENT_NAME" in
             schedule)
-              # Map cron expression to profile from tests.json
               if [[ "$CRON_SCHEDULE" == "0 3 * * *" ]]; then
-                PROFILE=$(jq -r '.schedules[] | select(.id == "nightly-smoke")' config/schedules/tests.json)
+                PROFILE=$(jq -c '.schedules[] | select(.id == "nightly-smoke")' config/schedules/tests.json)
                 TEST_TAGS=$(echo "$PROFILE" | jq -r '.profile.tags')
+                TARGET_ENV=$(echo "$PROFILE" | jq -r '.profile.environment')
                 PARALLELISM=$(echo "$PROFILE" | jq -r '.profile.parallelism')
                 TIMEOUT=$(echo "$PROFILE" | jq -r '.profile.timeoutMinutes')
-                GH_ENV=$(echo "$PROFILE" | jq -r '.githubEnvironment')
                 REPORT_TITLE="Nightly Smoke — $(date -u +%Y-%m-%d)"
               elif [[ "$CRON_SCHEDULE" == "0 2 * * 1" ]]; then
-                PROFILE=$(jq -r '.schedules[] | select(.id == "weekly-regression")' config/schedules/tests.json)
+                PROFILE=$(jq -c '.schedules[] | select(.id == "weekly-regression")' config/schedules/tests.json)
                 TEST_TAGS=$(echo "$PROFILE" | jq -r '.profile.tags')
+                TARGET_ENV=$(echo "$PROFILE" | jq -r '.profile.environment')
                 PARALLELISM=$(echo "$PROFILE" | jq -r '.profile.parallelism')
                 TIMEOUT=$(echo "$PROFILE" | jq -r '.profile.timeoutMinutes')
-                GH_ENV=$(echo "$PROFILE" | jq -r '.githubEnvironment')
                 REPORT_TITLE="Weekly Regression — $(date -u +%Y-%m-%d)"
               fi
-              ;;
-            repository_dispatch)
-              [[ -n "$DISPATCH_TAGS" ]] && TEST_TAGS="$DISPATCH_TAGS"
-              [[ -n "$DISPATCH_ENV" ]] && TARGET_ENV="$DISPATCH_ENV"
-              GH_ENV="tests-scheduled"
-              REPORT_TITLE="Post-Deploy Tests — ${TEST_TAGS}"
               ;;
             workflow_dispatch)
               TEST_TAGS="$INPUT_TAGS"
               TARGET_ENV="$INPUT_ENV"
               PARALLELISM="$INPUT_PARALLELISM"
-              # Manual tests use the protected environment
-              GH_ENV="stage"
               REPORT_TITLE="Manual — ${TEST_TAGS} (${TARGET_ENV})"
+              ;;
+            *)
+              echo "::error::Unsupported event: $EVENT_NAME"
+              exit 1
+              ;;
+          esac
+
+          case "$TARGET_ENV" in
+            stage) DOPPLER_CONFIG="stg" ;;
+            prod) DOPPLER_CONFIG="prd" ;;
+            *)
+              echo "::error::Unknown target_environment: $TARGET_ENV"
+              exit 1
               ;;
           esac
 
@@ -123,13 +116,57 @@ jobs:
             echo "target_environment=$TARGET_ENV"
             echo "parallelism=$PARALLELISM"
             echo "timeout_minutes=$TIMEOUT"
-            echo "github_environment=$GH_ENV"
-            echo "report_title=$REPORT_TITLE"
+            echo "doppler_config=$DOPPLER_CONFIG"
+            echo "report_title<<EOF"
+            echo "$REPORT_TITLE"
+            echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 2. Execute tests
-  # ──────────────────────────────────────────────────────────────────────────
+      - name: Resolve GitHub Environment
+        id: route
+        uses: ./.github/actions/resolve-deployment-environment
+        with:
+          trigger_type: ${{ github.event_name }}
+          target_environment: ${{ steps.resolve.outputs.target_environment }}
+          workflow_type: tests
+
+      - name: Finalize profile
+        id: finalize
+        env:
+          TEST_TAGS: ${{ steps.resolve.outputs.test_tags }}
+          TARGET_ENV: ${{ steps.resolve.outputs.target_environment }}
+          PARALLELISM: ${{ steps.resolve.outputs.parallelism }}
+          TIMEOUT: ${{ steps.resolve.outputs.timeout_minutes }}
+          DOPPLER_CONFIG: ${{ steps.resolve.outputs.doppler_config }}
+          REPORT_TITLE: ${{ steps.resolve.outputs.report_title }}
+          GH_ENV: ${{ steps.route.outputs.gh_env }}
+        run: |
+          set -euo pipefail
+          if [[ "$GH_ENV" == "prod" ]]; then
+            PARALLELISM=1
+            echo "::notice::Pinning parallelism to 1 for prod (one approval per run)"
+          fi
+          {
+            echo "test_tags=$TEST_TAGS"
+            echo "target_environment=$TARGET_ENV"
+            echo "parallelism=$PARALLELISM"
+            echo "timeout_minutes=$TIMEOUT"
+            echo "doppler_config=$DOPPLER_CONFIG"
+            echo "report_title<<EOF"
+            echo "$REPORT_TITLE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "::group::Resolved test profile"
+          echo "test_tags=$TEST_TAGS"
+          echo "target_environment=$TARGET_ENV"
+          echo "parallelism=$PARALLELISM"
+          echo "timeout_minutes=$TIMEOUT"
+          echo "gh_env=$GH_ENV"
+          echo "doppler_config=$DOPPLER_CONFIG"
+          echo "report_title=$REPORT_TITLE"
+          echo "::endgroup::"
+          echo "::notice::Test profile — tags=$TEST_TAGS env=$TARGET_ENV gh_env=$GH_ENV shards=$PARALLELISM doppler=$DOPPLER_CONFIG"
+
   tests:
     name: Run tests
     needs: profile
@@ -139,19 +176,16 @@ jobs:
       test_branch: main
       test_tags: ${{ needs.profile.outputs.test_tags }}
       target_environment: ${{ needs.profile.outputs.target_environment }}
-      github_environment: ${{ needs.profile.outputs.github_environment }}
+      use_gh_env: true
+      gh_env: ${{ needs.profile.outputs.gh_env }}
       doppler_project: ${{ vars.DOPPLER_PROJECT_TEST }}
-      doppler_config: ${{ needs.profile.outputs.target_environment }}
+      doppler_config: ${{ needs.profile.outputs.doppler_config }}
       parallelism: ${{ fromJson(needs.profile.outputs.parallelism) }}
       timeout_minutes: ${{ fromJson(needs.profile.outputs.timeout_minutes) }}
       report_title: ${{ needs.profile.outputs.report_title }}
     secrets:
       PAT: ${{ secrets.PAT }}
-      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 3. Summarize results
-  # ──────────────────────────────────────────────────────────────────────────
   summary:
     name: Test run summary
     needs: [profile, tests]
@@ -160,18 +194,31 @@ jobs:
 
     steps:
       - name: Write run summary
+        env:
+          TEST_TAGS: ${{ needs.profile.outputs.test_tags }}
+          TARGET_ENV: ${{ needs.profile.outputs.target_environment }}
+          GH_ENV: ${{ needs.profile.outputs.gh_env }}
+          SHARDS: ${{ needs.profile.outputs.parallelism }}
+          TOTAL: ${{ needs.tests.outputs.total_tests }}
+          PASSED: ${{ needs.tests.outputs.passed_tests }}
+          FAILED: ${{ needs.tests.outputs.failed_tests }}
+          BROKEN: ${{ needs.tests.outputs.broken_tests }}
+          REPORT_URL: ${{ needs.tests.outputs.report_url }}
+          TESTS_PASSED: ${{ needs.tests.outputs.tests_passed }}
         run: |
           {
             echo "## Test Run Summary"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| Tags | \`${{ needs.profile.outputs.test_tags }}\` |"
-            echo "| Environment | \`${{ needs.profile.outputs.target_environment }}\` |"
-            echo "| GitHub Environment | \`${{ needs.profile.outputs.github_environment }}\` |"
-            echo "| Shards | ${{ needs.profile.outputs.parallelism }} |"
-            echo "| Total tests | ${{ needs.tests.outputs.total_tests }} |"
-            echo "| Passed | ✅ ${{ needs.tests.outputs.passed_tests }} |"
-            echo "| Failed | ❌ ${{ needs.tests.outputs.failed_tests }} |"
-            echo "| Report | [${{ needs.tests.outputs.report_url }}](${{ needs.tests.outputs.report_url }}) |"
+            echo "| Tags | \`${TEST_TAGS}\` |"
+            echo "| Environment | \`${TARGET_ENV}\` |"
+            echo "| GitHub Environment | \`${GH_ENV}\` |"
+            echo "| Shards | ${SHARDS} |"
+            echo "| Total tests | ${TOTAL} |"
+            echo "| Passed | ${PASSED} |"
+            echo "| Failed | ${FAILED} |"
+            echo "| Broken | ${BROKEN} |"
+            echo "| Gate | ${TESTS_PASSED} |"
+            echo "| Report | [${REPORT_URL}](${REPORT_URL}) |"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -90,7 +90,11 @@ runs:
           SRC_BASE="$BUILD_ROOT"
         fi
 
+        echo "::group::Stage bundle"
         echo "Staging output from: $SRC_BASE/$OUTPUT_PATH"
+        echo "build_root=$BUILD_ROOT app_root=$APP_ROOT output_path=$OUTPUT_PATH"
+        echo "bundle_includes=$BUNDLE_INCLUDES artifact=$ARTIFACT_NAME"
+        echo "::endgroup::"
         cp -r "$SRC_BASE/$OUTPUT_PATH" "$BUNDLE_DIR/dist"
 
         # Copy package.json and production lock file

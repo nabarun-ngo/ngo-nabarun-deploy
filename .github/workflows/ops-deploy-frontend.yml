@@ -4,8 +4,7 @@ name: Ops — Deploy Frontend (Firebase)
 # Also handles the bi-weekly scheduled public site deploy.
 #
 # Schedule: '0 2 1,15 * *' — 1st and 15th of each month at 02:00 UTC.
-# On schedule: hard-routes to frontend manifest, stage environment,
-#              then dispatches post-deploy smoke tests.
+# On schedule: hard-routes to frontend manifest and stage environment.
 #
 # Access control:
 #   stage            → GitHub Environment 'stage'
@@ -96,6 +95,10 @@ jobs:
       source_ref: ${{ steps.resolve.outputs.source_ref }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Resolve manifest ${{ needs.context.outputs.manifest_name }} env=${{ needs.context.outputs.target_environment }} trigger=${{ needs.context.outputs.trigger_type }}"
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -117,6 +120,10 @@ jobs:
       ref: ${{ steps.resolve.outputs.ref }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Resolve git ref tag=${{ needs.context.outputs.tag_name }} branch=${{ needs.manifest.outputs.source_ref }} repo=${{ needs.manifest.outputs.repository }}"
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -137,9 +144,13 @@ jobs:
     needs: context
     runs-on: ubuntu-latest
     outputs:
-      github_environment: ${{ steps.resolve.outputs.github_environment }}
+      gh_env: ${{ steps.resolve.outputs.gh_env }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Resolve GitHub Environment trigger=${{ needs.context.outputs.trigger_type }} target=${{ needs.context.outputs.target_environment }}"
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -173,47 +184,11 @@ jobs:
       doppler_config: ${{ needs.manifest.outputs.doppler_config }}
       firebase_site: ${{ needs.manifest.outputs.target_service }}
       ref: ${{ needs.resolve_ref.outputs.ref }}
-      github_environment: ${{ needs.resolve_env.outputs.github_environment }}
+      use_gh_env: true
+      gh_env: ${{ needs.resolve_env.outputs.gh_env }}
       target_environment: ${{ needs.context.outputs.target_environment }}
     secrets:
       PAT: ${{ secrets.PAT }}
       FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
       FB_SA_KEY: ${{ secrets.FB_SA_KEY }}
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_FE }}
-
-  # ──────────────────────────────────────────────────────────────────────────
-  # 6. Post-deploy: dispatch smoke tests (scheduled run only)
-  # ──────────────────────────────────────────────────────────────────────────
-  # dispatch_smoke_tests:
-  #   name: Dispatch post-deploy smoke tests
-  #   needs: deploy
-  #   if: github.event_name == 'schedule'
-  #   runs-on: ubuntu-latest
-
-  #   steps:
-  #     - name: Fire Trigger-Run-Tests dispatch
-  #       env:
-  #         GH_TOKEN: ${{ secrets.PAT }}
-  #         REPO: ${{ github.repository }}
-  #       run: |
-  #         gh api \
-  #           --method POST \
-  #           -H "Accept: application/vnd.github+json" \
-  #           "/repos/${REPO}/dispatches" \
-  #           -f event_type="Trigger-Run-Tests" \
-  #           -f "client_payload[tags]=@publicsmoke" \
-  #           -f "client_payload[target_environment]=stage" \
-  #           -f "client_payload[triggered_by]=scheduled-public-site-deploy"
-
-  #         echo "::notice::Dispatched @publicsmoke tests after scheduled deploy"
-
-  #     - name: Write step summary
-  #       run: |
-  #         {
-  #           echo "### Scheduled Public Site Deploy Complete"
-  #           echo ""
-  #           echo "| Field | Value |"
-  #           echo "|-------|-------|"
-  #           echo "| Hosting URL | ${{ needs.deploy.outputs.hosting_url }} |"
-  #           echo "| Smoke tests | Dispatched (Trigger-Run-Tests @publicsmoke) |"
-  #         } >> "$GITHUB_STEP_SUMMARY"

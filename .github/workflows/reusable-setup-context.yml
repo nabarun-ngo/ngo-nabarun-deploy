@@ -67,6 +67,19 @@ jobs:
       workflow_type: ${{ steps.ctx.outputs.workflow_type }}
 
     steps:
+      - name: Log run context
+        env:
+          LOG_TITLE: Setup context
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          set -euo pipefail
+          echo "::notice::${LOG_TITLE} — ${GITHUB_EVENT_NAME} run=${GITHUB_RUN_ID}"
+          echo "::group::${LOG_TITLE} context"
+          echo "event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF} sha=${GITHUB_SHA}"
+          echo "job=${GITHUB_JOB} actor=${GITHUB_ACTOR}"
+          echo "${LOG_INPUTS}"
+          echo "::endgroup::"
+
       - name: Resolve context
         id: ctx
         shell: bash
@@ -131,6 +144,14 @@ jobs:
             echo "workflow_type=$WORKFLOW_TYPE"
           } >> "$GITHUB_OUTPUT"
 
+          echo "::group::Resolved context"
+          echo "trigger_type=$TRIGGER_TYPE"
+          echo "manifest_name=$MANIFEST_NAME"
+          echo "target_environment=$TARGET_ENV"
+          echo "tag_name=$TAG_NAME"
+          echo "approval_mode=$APPROVAL_MODE"
+          echo "workflow_type=$WORKFLOW_TYPE"
+          echo "::endgroup::"
           echo "::notice::Context resolved — trigger=$TRIGGER_TYPE, manifest=$MANIFEST_NAME, env=$TARGET_ENV, tag=$TAG_NAME"
 
       - name: Write step summary

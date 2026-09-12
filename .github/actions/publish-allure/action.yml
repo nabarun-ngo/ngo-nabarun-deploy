@@ -29,7 +29,7 @@ inputs:
     required: false
     default: '20'
   github_token:
-    description: Token with write access to the gh-pages branch.
+    description: Token with write access to the gh-pages branch (same-repo GITHUB_TOKEN).
     required: true
 
 outputs:
@@ -41,13 +41,14 @@ runs:
   using: composite
   steps:
     - name: Download all Allure result shards
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         pattern: ${{ inputs.shard_artifact_prefix }}-*
         path: allure-results-raw/
         merge-multiple: true
+        if-no-files-found: error
 
-    - name: Restore Allure history from gh-pages
+    - name: Clone gh-pages and restore Allure history
       id: history
       shell: bash
       env:
@@ -60,40 +61,74 @@ runs:
 
         mkdir -p allure-results/history
 
-        # Try to fetch history from the previous run's last report
-        HISTORY_URL="https://raw.githubusercontent.com/${REPO}/${GH_PAGES_BRANCH}/${REPORT_BASE_PATH}/last-run/history"
+        if git clone --depth=1 --branch "$GH_PAGES_BRANCH" \
+              "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" \
+              gh-pages-work; then
+          echo "::notice::Cloned existing ${GH_PAGES_BRANCH} branch"
+        else
+          echo "::notice::${GH_PAGES_BRANCH} missing — creating orphan branch"
+          git clone --depth=1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" \
+            gh-pages-work
+          git -C gh-pages-work checkout --orphan "$GH_PAGES_BRANCH"
+          git -C gh-pages-work rm -rf . || true
+        fi
 
-        if curl -sf -H "Authorization: Bearer $GH_TOKEN" \
-              "${HISTORY_URL}/history.json" \
-              -o allure-results/history/history.json 2>/dev/null; then
-          echo "::notice::Restored Allure history from gh-pages"
-          # Also fetch trend data files
-          for f in history-trend.json categories-trend.json duration-trend.json retry-trend.json; do
-            curl -sf -H "Authorization: Bearer $GH_TOKEN" "${HISTORY_URL}/$f" \
-              -o "allure-results/history/$f" 2>/dev/null || true
-          done
+        HISTORY_SRC="gh-pages-work/${REPORT_BASE_PATH}/last-run/history"
+        if [[ -d "$HISTORY_SRC" ]]; then
+          cp -r "${HISTORY_SRC}/." allure-results/history/ || true
+          echo "::notice::Restored Allure history from gh-pages last-run"
         else
           echo "::notice::No prior Allure history found — first run or history not yet published."
         fi
 
     - name: Merge result shards
       shell: bash
+      env:
+        SERVER_URL: ${{ github.server_url }}
+        REPO: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
       run: |
         set -euo pipefail
-        # Flatten all shard subdirectories into a single allure-results/
-        find allure-results-raw/ -name '*.json' -o -name '*.xml' -o -name '*.txt' -o -name '*.png' \
-          | while read f; do cp "$f" allure-results/ 2>/dev/null || true; done
-        echo "::notice::Merged $(find allure-results/ -maxdepth 1 -type f | wc -l) result files"
+        mkdir -p allure-results
+
+        count=0
+        while IFS= read -r -d '' f; do
+          cp "$f" allure-results/
+          count=$((count + 1))
+        done < <(find allure-results-raw/ \( \
+          -name '*.json' -o -name '*.xml' -o -name '*.txt' -o -name '*.png' \
+          -o -name '*.html' -o -name '*.jpeg' -o -name '*.jpg' -o -name '*.webm' \
+          -o -name '*.log' -o -name '*.attach' -o -name 'environment.properties' \
+        \) -print0 2>/dev/null || true)
+
+        if (( count < 1 )); then
+          echo "::error::No Allure result files merged from shard artifacts"
+          exit 1
+        fi
+        echo "::notice::Merged ${count} result files"
+
+        cat > allure-results/executor.json <<EOF
+        {
+          "name": "GitHub Actions",
+          "type": "github",
+          "buildName": "${RUN_ID}",
+          "buildUrl": "${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
+        }
+        EOF
 
     - name: Install Allure CLI
       shell: bash
       run: |
+        set -euo pipefail
         if ! command -v allure &>/dev/null; then
-          echo "Installing Allure CLI..."
+          echo "Installing Allure CLI into \$HOME..."
           curl -fsSL https://github.com/allure-framework/allure2/releases/download/2.27.0/allure-2.27.0.tgz \
             -o /tmp/allure.tgz
-          tar -xzf /tmp/allure.tgz -C /opt
-          ln -sf /opt/allure-2.27.0/bin/allure /usr/local/bin/allure
+          mkdir -p "$HOME/allure"
+          tar -xzf /tmp/allure.tgz -C "$HOME/allure"
+          echo "$HOME/allure/allure-2.27.0/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/allure/allure-2.27.0/bin:$PATH"
         fi
         allure --version
 
@@ -103,11 +138,11 @@ runs:
         REPORT_TITLE: ${{ inputs.report_title }}
       run: |
         set -euo pipefail
+        export PATH="$HOME/allure/allure-2.27.0/bin:$PATH"
         allure generate allure-results \
           --output allure-html \
-          --clean \
-          --name "$REPORT_TITLE"
-        echo "::notice::Allure report generated at allure-html/"
+          --clean
+        echo "::notice::Allure report generated at allure-html/ (${REPORT_TITLE})"
 
     - name: Push report to gh-pages
       id: push
@@ -119,42 +154,36 @@ runs:
         MAX_HISTORY: ${{ inputs.max_history }}
         RUN_ID: ${{ github.run_id }}
         REPO: ${{ github.repository }}
-        SERVER_URL: ${{ github.server_url }}
       run: |
         set -euo pipefail
 
-        # Clone only the gh-pages branch (sparse, no blobs we don't need)
-        git clone --depth=1 --branch "$GH_PAGES_BRANCH" \
-          "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" \
-          gh-pages-work 2>/dev/null \
-          || (git clone --depth=1 "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" gh-pages-work \
-              && git -C gh-pages-work checkout --orphan "$GH_PAGES_BRANCH" \
-              && git -C gh-pages-work rm -rf .)
+        if ! [[ "$MAX_HISTORY" =~ ^[0-9]+$ ]] || (( MAX_HISTORY < 1 )); then
+          echo "::error::max_history must be a positive integer"
+          exit 1
+        fi
 
         RUN_REPORT_PATH="gh-pages-work/${REPORT_BASE_PATH}/${RUN_ID}"
         LAST_RUN_PATH="gh-pages-work/${REPORT_BASE_PATH}/last-run"
+        RUNS_DIR="gh-pages-work/${REPORT_BASE_PATH}"
 
-        # Copy new report
         mkdir -p "$RUN_REPORT_PATH"
         cp -r allure-html/. "$RUN_REPORT_PATH/"
 
-        # Prune old run directories beyond MAX_HISTORY
-        RUNS_DIR="gh-pages-work/${REPORT_BASE_PATH}"
-        EXISTING_RUNS=$(ls -1d "${RUNS_DIR}"/[0-9]* 2>/dev/null | sort -n || true)
-        TOTAL=$(echo "$EXISTING_RUNS" | grep -c . || true)
+        EXISTING_RUNS=$(find "$RUNS_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null \
+          | grep -E '^[0-9]+$' | sort -n || true)
+        TOTAL=$(printf '%s\n' "$EXISTING_RUNS" | grep -c '[^[:space:]]' || true)
+        TOTAL=${TOTAL:-0}
         if (( TOTAL > MAX_HISTORY )); then
           TO_DELETE=$(( TOTAL - MAX_HISTORY ))
-          echo "$EXISTING_RUNS" | head -$TO_DELETE | while read dir; do
-            echo "Pruning old report: $dir"
-            rm -rf "$dir"
+          printf '%s\n' "$EXISTING_RUNS" | head -n "$TO_DELETE" | while read -r dir; do
+            echo "Pruning old report: ${RUNS_DIR}/${dir}"
+            rm -rf "${RUNS_DIR}/${dir}"
           done
         fi
 
-        # Update last-run symlink → copy (GitHub Pages doesn't serve symlinks)
         rm -rf "$LAST_RUN_PATH"
         cp -r "$RUN_REPORT_PATH" "$LAST_RUN_PATH"
 
-        # Update index redirect for the reports directory
         cat > "${RUNS_DIR}/index.html" <<EOF
         <!DOCTYPE html>
         <html>
@@ -166,14 +195,26 @@ runs:
         </html>
         EOF
 
-        # Commit and push
         cd gh-pages-work
         git config user.name  "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git add "${REPORT_BASE_PATH}/"
         git commit -m "report: allure run ${RUN_ID} [skip ci]" \
           || echo "Nothing to commit"
-        git push origin "$GH_PAGES_BRANCH"
+
+        pushed=0
+        for attempt in 1 2 3; do
+          if git push origin "$GH_PAGES_BRANCH"; then
+            pushed=1
+            break
+          fi
+          echo "::warning::gh-pages push attempt ${attempt} rejected — rebase and retry"
+          git pull --rebase origin "$GH_PAGES_BRANCH"
+        done
+        if (( pushed != 1 )); then
+          echo "::error::Failed to push Allure report to ${GH_PAGES_BRANCH}"
+          exit 1
+        fi
 
         PAGES_OWNER=$(echo "$REPO" | cut -d/ -f1)
         PAGES_REPONAME=$(echo "$REPO" | cut -d/ -f2)

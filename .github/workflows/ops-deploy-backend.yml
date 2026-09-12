@@ -79,6 +79,10 @@ jobs:
       source_ref: ${{ steps.resolve.outputs.source_ref }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Resolve manifest ${{ needs.context.outputs.manifest_name }} env=${{ needs.context.outputs.target_environment }} trigger=${{ needs.context.outputs.trigger_type }}"
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -100,6 +104,10 @@ jobs:
       ref: ${{ steps.resolve.outputs.ref }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Resolve git ref tag=${{ needs.context.outputs.tag_name }} branch=${{ needs.manifest.outputs.source_ref }} repo=${{ needs.manifest.outputs.repository }}"
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -120,9 +128,13 @@ jobs:
     needs: context
     runs-on: ubuntu-latest
     outputs:
-      github_environment: ${{ steps.resolve.outputs.github_environment }}
+      gh_env: ${{ steps.resolve.outputs.gh_env }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Resolve GitHub Environment trigger=${{ needs.context.outputs.trigger_type }} target=${{ needs.context.outputs.target_environment }}"
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -162,7 +174,8 @@ jobs:
       doppler_project: ${{ needs.manifest.outputs.doppler_project }}
       doppler_config: ${{ needs.manifest.outputs.doppler_config }}
       ref: ${{ needs.resolve_ref.outputs.ref }}
-      github_environment: ${{ needs.resolve_env.outputs.github_environment }}
+      use_gh_env: true
+      gh_env: ${{ needs.resolve_env.outputs.gh_env }}
       target_environment: ${{ needs.context.outputs.target_environment }}
     secrets:
       PAT: ${{ secrets.PAT }}

@@ -103,10 +103,16 @@ on:
         description: Git ref (tag or branch) to deploy.
         type: string
         required: true
-      github_environment:
-        description: GitHub Environment name (drives secret scoping + approval gate).
+      use_gh_env:
+        description: Bind migrate/deploy jobs to a GitHub Environment (reviewers / env secrets).
+        type: boolean
+        required: false
+        default: true
+      gh_env:
+        description: GitHub Environment name when use_gh_env is true (e.g. stage, prod).
         type: string
-        required: true
+        required: false
+        default: ''
       target_environment:
         description: Logical environment label (stage | prod) — used for render-config vars.
         type: string
@@ -142,6 +148,19 @@ jobs:
       artifact_name: ${{ steps.set_artifact.outputs.artifact_name }}
 
     steps:
+      - name: Log run context
+        env:
+          LOG_TITLE: GAE build — ${{ inputs.app_name }}
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          set -euo pipefail
+          echo "::notice::${LOG_TITLE} — ref=${{ inputs.ref }} run=${GITHUB_RUN_ID}"
+          echo "::group::${LOG_TITLE} context"
+          echo "event=${GITHUB_EVENT_NAME} sha=${GITHUB_SHA}"
+          echo "job=${GITHUB_JOB} actor=${GITHUB_ACTOR}"
+          echo "${LOG_INPUTS}"
+          echo "::endgroup::"
+
       - name: Checkout platform repo (for actions + config)
         uses: actions/checkout@v7
 
@@ -157,6 +176,7 @@ jobs:
         id: set_artifact
         run: |
           echo "artifact_name=gae-bundle-${{ inputs.app_name }}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+          echo "::notice::artifact_name=gae-bundle-${{ inputs.app_name }}-${{ github.run_id }}"
 
       - name: Stage deploy bundle
         uses: ./.github/actions/stage-node-artifact
@@ -171,6 +191,22 @@ jobs:
           artifact_name: ${{ steps.set_artifact.outputs.artifact_name }}
           node_version: ${{ inputs.node_version }}
 
+      - name: Build outcome
+        if: always()
+        run: |
+          echo "::notice::GAE build ${{ job.status }} app=${{ inputs.app_name }} artifact=gae-bundle-${{ inputs.app_name }}-${{ github.run_id }}"
+          {
+            echo "### GAE Build — ${{ inputs.app_name }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Status | ${{ job.status }} |"
+            echo "| Ref | \`${{ inputs.ref }}\` |"
+            echo "| Artifact | \`gae-bundle-${{ inputs.app_name }}-${{ github.run_id }}\` |"
+            echo "| build_root | \`${{ inputs.build_root }}\` |"
+            echo "| app_root | \`${{ inputs.app_root }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # ──────────────────────────────────────────────────────────────────────────
   # 2. Migrate (conditional — must complete before deploy)
   # ──────────────────────────────────────────────────────────────────────────
@@ -180,9 +216,29 @@ jobs:
     if: ${{ inputs.db_migrate == true }}
     runs-on: ubuntu-latest
     environment:
-      name: ${{ inputs.github_environment }}
+      name: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::GAE migrate — ${{ inputs.app_name }} artifact=${{ needs.build.outputs.artifact_name }} cmd=${{ inputs.db_command }}"
+          echo "::group::GAE migrate context"
+          echo "gh_env=${{ inputs.gh_env }} use_gh_env=${{ inputs.use_gh_env }}"
+          echo "doppler_project=${{ inputs.doppler_project }}"
+          echo "doppler_config=${{ inputs.doppler_config }}"
+          echo "target_environment=${{ inputs.target_environment }}"
+          echo "::endgroup::"
+
+      - name: Require gh_env
+        if: ${{ inputs.use_gh_env }}
+        env:
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$GH_ENV" ]]; then
+            echo "::error::gh_env is required when use_gh_env is true"
+            exit 1
+          fi
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -207,14 +263,20 @@ jobs:
           set -euo pipefail
 
           if [[ -f "bin/doppler" && -n "${DOPPLER_TOKEN:-}" ]]; then
-            echo "Running migration via Doppler CLI..."
+            echo "::notice::Running migration via Doppler CLI (token present, binary present)"
+            echo "::group::Migration command"
+            echo "${{ inputs.db_command }}"
+            echo "::endgroup::"
             ./bin/doppler run \
               --project="$DOPPLER_PROJECT" \
               --config="$DOPPLER_CONFIG" \
               --token="$DOPPLER_TOKEN" \
               -- ${{ inputs.db_command }}
           else
-            echo "Running migration with ambient environment..."
+            echo "::notice::Running migration with ambient environment (doppler_cli=$([[ -f bin/doppler ]] && echo yes || echo no) token_set=$([[ -n ${DOPPLER_TOKEN:-} ]] && echo yes || echo no))"
+            echo "::group::Migration command"
+            echo "${{ inputs.db_command }}"
+            echo "::endgroup::"
             ${{ inputs.db_command }}
           fi
 
@@ -243,13 +305,34 @@ jobs:
       (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     runs-on: ubuntu-latest
     environment:
-      name: ${{ inputs.github_environment }}
+      name: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
       url: ${{ steps.promote.outputs.deploy_url }}
     outputs:
       deploy_url: ${{ steps.promote.outputs.deploy_url }}
       new_version: ${{ steps.deploy_version.outputs.version_id }}
 
     steps:
+      - name: Log run context
+        env:
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          echo "::notice::GAE deploy — ${{ inputs.app_name }} ref=${{ inputs.ref }} gh_env=${{ inputs.gh_env }} migrate=${{ needs.migrate.result }}"
+          echo "::group::GAE deploy context"
+          echo "artifact=${{ needs.build.outputs.artifact_name }}"
+          echo "build=${{ needs.build.result }} migrate=${{ needs.migrate.result }}"
+          echo "${LOG_INPUTS}"
+          echo "::endgroup::"
+
+      - name: Require gh_env
+        if: ${{ inputs.use_gh_env }}
+        env:
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$GH_ENV" ]]; then
+            echo "::error::gh_env is required when use_gh_env is true"
+            exit 1
+          fi
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -389,7 +472,7 @@ jobs:
             echo "| Service | \`${{ inputs.gae_service }}\` |"
             echo "| Version | \`${{ steps.deploy_version.outputs.version_id }}\` |"
             echo "| Source ref | \`${{ inputs.ref }}\` |"
-            echo "| Environment | \`${{ inputs.github_environment }}\` |"
+            echo "| Environment | \`${{ inputs.gh_env }}\` |"
             echo "| Deploy URL | ${{ steps.promote.outputs.deploy_url }} |"
             echo "| Status | ${{ job.status }} |"
           } >> "$GITHUB_STEP_SUMMARY"

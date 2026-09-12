@@ -24,19 +24,6 @@
         "timeoutMinutes": 90
       },
       "githubEnvironment": "tests-scheduled"
-    },
-    {
-      "id": "post-deploy-publicsmoke",
-      "description": "Public site smoke test — triggered via repository_dispatch after bi-weekly public site deploy.",
-      "trigger": "repository_dispatch",
-      "eventType": "Trigger-Run-Tests",
-      "profile": {
-        "tags": "@publicsmoke",
-        "environment": "stage",
-        "parallelism": 2,
-        "timeoutMinutes": 20
-      },
-      "githubEnvironment": "tests-scheduled"
     }
   ]
 }

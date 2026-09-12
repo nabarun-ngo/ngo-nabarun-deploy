@@ -1,0 +1,448 @@
+name: Reusable — CI Changesets version / npm / tags
+
+# workflow_call only.
+# Job 1 version — always: Version Packages PR, or expose package.json version.
+# Job 2 npm — if publish_to_npm and version is already in git (publish_command from caller).
+# Job 3 tags_and_releases — if create_tags_and_releases and version is in git.
+# Git tags are the bare semver (no v prefix). No auto_deploy.
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: Node.js version.
+        type: string
+        required: false
+        default: '22'
+      working_directory:
+        description: Working directory for install / Changesets (repo-relative).
+        type: string
+        required: false
+        default: '.'
+      npm_scope:
+        description: npm scope for setup-node (e.g. '@web-toolkit'). Empty skips scope.
+        type: string
+        required: false
+        default: ''
+      version_command:
+        description: Command used by changesets/action to apply versions.
+        type: string
+        required: false
+        default: 'npm run version-packages'
+      publish_to_npm:
+        description: Publish to the public npm registry after versions are in git.
+        type: boolean
+        required: false
+        default: true
+      publish_command:
+        description: Command the caller wants to run to publish (e.g. npm run release or npm run release:beta).
+        type: string
+        required: false
+        default: 'npm run release'
+      create_tags_and_releases:
+        description: Create a git tag and GitHub Release from version_file (no v prefix).
+        type: boolean
+        required: false
+        default: false
+      version_file:
+        description: Repo-relative package.json used as the version / tag source.
+        type: string
+        required: false
+        default: 'package.json'
+      changeset_title:
+        description: Title for the Version Packages pull request.
+        type: string
+        required: false
+        default: 'chore: version packages'
+      changeset_commit:
+        description: Commit message for version bumps.
+        type: string
+        required: false
+        default: 'chore: version packages'
+      use_gh_env:
+        description: Bind jobs to a GitHub Environment (reviewers / env secrets).
+        type: boolean
+        required: false
+        default: false
+      gh_env:
+        description: GitHub Environment name when use_gh_env is true (e.g. stage, prod).
+        type: string
+        required: false
+        default: ''
+
+    secrets:
+      NPM_TOKEN:
+        required: false
+      GH_TOKEN:
+        required: true
+
+    outputs:
+      version_ready:
+        description: '"true" when no pending changesets (versions already in git).'
+        value: ${{ jobs.version.outputs.version_ready }}
+      version:
+        description: Semver from version_file when version_ready (no v prefix).
+        value: ${{ jobs.version.outputs.version }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
+    outputs:
+      version_ready: ${{ steps.gate.outputs.version_ready }}
+      version: ${{ steps.gate.outputs.version }}
+
+    steps:
+      - name: Log run context
+        env:
+          LOG_TITLE: Version
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          set -euo pipefail
+          echo "::notice::${LOG_TITLE} — ${GITHUB_EVENT_NAME} ${GITHUB_REF} sha=${GITHUB_SHA:0:7} run=${GITHUB_RUN_ID}"
+          echo "::group::${LOG_TITLE} context"
+          cat <<EOF
+          event=${GITHUB_EVENT_NAME}
+          ref=${GITHUB_REF}
+          sha=${GITHUB_SHA}
+          actor=${GITHUB_ACTOR}
+          run_id=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}
+          job=${GITHUB_JOB}
+          workflow=${GITHUB_WORKFLOW}
+          repository=${GITHUB_REPOSITORY}
+          runner=${RUNNER_OS}/${RUNNER_ARCH}
+          run_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          --- inputs ---
+          ${LOG_INPUTS}
+          EOF
+          [[ -n "${LOG_EXTRA:-}" ]] && { echo "--- extra ---"; echo "${LOG_EXTRA}"; }
+          echo "::endgroup::"
+          {
+            echo "### ${LOG_TITLE}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Event | \`${GITHUB_EVENT_NAME}\` |"
+            echo "| Ref | \`${GITHUB_REF}\` |"
+            echo "| SHA | \`${GITHUB_SHA}\` |"
+            echo "| Job | \`${GITHUB_JOB}\` |"
+            echo "| Run | [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) |"
+            echo ""
+            echo "<details><summary>inputs</summary>"
+            echo ""
+            echo '```json'
+            echo "${LOG_INPUTS}"
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require gh_env
+        if: ${{ inputs.use_gh_env }}
+        env:
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$GH_ENV" ]]; then
+            echo "::error::gh_env is required when use_gh_env is true"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working_directory == '.' && 'package-lock.json' || format('{0}/package-lock.json', inputs.working_directory) }}
+          registry-url: https://registry.npmjs.org
+          scope: ${{ inputs.npm_scope }}
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working_directory }}
+        run: npm ci
+
+      - name: Version Packages pull request
+        uses: changesets/action@v1
+        with:
+          cwd: ${{ inputs.working_directory }}
+          version: ${{ inputs.version_command }}
+          commit: ${{ inputs.changeset_commit }}
+          title: ${{ inputs.changeset_title }}
+          createGithubReleases: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Decide if version is ready
+        id: gate
+        env:
+          WORK_DIR: ${{ inputs.working_directory }}
+          VERSION_FILE: ${{ inputs.version_file }}
+        run: |
+          set -euo pipefail
+
+          CS_DIR=".changeset"
+          if [[ "$WORK_DIR" != "." ]]; then
+            CS_DIR="${WORK_DIR}/.changeset"
+          fi
+
+          PENDING=0
+          PENDING_LIST=""
+          if [[ -d "$CS_DIR" ]]; then
+            echo "::group::Changeset directory ${CS_DIR}"
+            ls -la "$CS_DIR" || true
+            echo "::endgroup::"
+            while IFS= read -r -d '' file; do
+              base=$(basename "$file")
+              if [[ "$base" == "README.md" ]]; then
+                continue
+              fi
+              PENDING=$((PENDING + 1))
+              PENDING_LIST="${PENDING_LIST}${base}"$'\n'
+            done < <(find "$CS_DIR" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null || true)
+          else
+            echo "::notice::No changeset directory at ${CS_DIR}"
+          fi
+
+          if [[ "$PENDING" -gt 0 ]]; then
+            echo "version_ready=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pending changesets ($PENDING); Version Packages PR only."
+            echo "::group::Pending changeset files"
+            printf '%s' "$PENDING_LIST"
+            echo "::endgroup::"
+            {
+              echo "### Version gate"
+              echo ""
+              echo "version_ready: \`false\` — $PENDING pending changeset(s)."
+              echo ""
+              echo '```'
+              printf '%s' "$PENDING_LIST"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ ! -f "$VERSION_FILE" ]]; then
+            echo "::error::version_file not found: $VERSION_FILE"
+            exit 1
+          fi
+
+          VERSION=$(jq -r '.version // empty' "$VERSION_FILE")
+          if [[ -z "$VERSION" || "$VERSION" == "null" ]]; then
+            echo "::error::No version field in $VERSION_FILE"
+            exit 1
+          fi
+
+          echo "version_ready=true" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "::notice::Version ready: $VERSION"
+          {
+            echo "### Version gate"
+            echo ""
+            echo "version_ready: \`true\`"
+            echo "version: \`$VERSION\` from \`$VERSION_FILE\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  npm:
+    name: Publish npm
+    needs: version
+    if: ${{ inputs.publish_to_npm && needs.version.outputs.version_ready == 'true' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
+
+    steps:
+      - name: Log run context
+        env:
+          LOG_TITLE: Publish npm
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+          LOG_EXTRA: |
+            version=${{ needs.version.outputs.version }}
+            version_ready=${{ needs.version.outputs.version_ready }}
+            npm_token_present=${{ secrets.NPM_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          echo "::notice::${LOG_TITLE} — ${GITHUB_EVENT_NAME} ${GITHUB_REF} sha=${GITHUB_SHA:0:7} run=${GITHUB_RUN_ID}"
+          echo "::group::${LOG_TITLE} context"
+          echo "event=${GITHUB_EVENT_NAME}"
+          echo "ref=${GITHUB_REF}"
+          echo "sha=${GITHUB_SHA}"
+          echo "actor=${GITHUB_ACTOR}"
+          echo "run_id=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}"
+          echo "job=${GITHUB_JOB} workflow=${GITHUB_WORKFLOW}"
+          echo "repository=${GITHUB_REPOSITORY}"
+          echo "runner=${RUNNER_OS}/${RUNNER_ARCH}"
+          echo "--- inputs ---"
+          echo "${LOG_INPUTS}"
+          echo "--- extra ---"
+          echo "${LOG_EXTRA}"
+          echo "::endgroup::"
+          {
+            echo "### ${LOG_TITLE}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Version | \`${{ needs.version.outputs.version }}\` |"
+            echo "| publish_command | \`${{ inputs.publish_command }}\` |"
+            echo "| npm token present | \`${{ secrets.NPM_TOKEN != '' }}\` |"
+            echo "| Job | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require gh_env
+        if: ${{ inputs.use_gh_env }}
+        env:
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$GH_ENV" ]]; then
+            echo "::error::gh_env is required when use_gh_env is true"
+            exit 1
+          fi
+
+      - name: Require NPM_TOKEN
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -z "$NPM_TOKEN" ]]; then
+            echo "::error::NPM_TOKEN is required when publish_to_npm is true"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working_directory == '.' && 'package-lock.json' || format('{0}/package-lock.json', inputs.working_directory) }}
+          registry-url: https://registry.npmjs.org
+          scope: ${{ inputs.npm_scope }}
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working_directory }}
+        run: npm ci
+
+      - name: Publish packages
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: ${{ inputs.publish_command }}
+
+      - name: Publish outcome
+        if: always()
+        run: |
+          echo "::notice::npm publish job ${{ job.status }} version=${{ needs.version.outputs.version }} command=${{ inputs.publish_command }}"
+          echo "**npm job:** ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+
+  tags_and_releases:
+    name: Git tags and GitHub Releases
+    needs: version
+    if: ${{ inputs.create_tags_and_releases && needs.version.outputs.version_ready == 'true' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
+
+    steps:
+      - name: Log run context
+        env:
+          LOG_TITLE: Git tags and GitHub Releases
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+          LOG_EXTRA: |
+            version=${{ needs.version.outputs.version }}
+            version_ready=${{ needs.version.outputs.version_ready }}
+        run: |
+          set -euo pipefail
+          echo "::notice::${LOG_TITLE} — ${GITHUB_EVENT_NAME} ${GITHUB_REF} sha=${GITHUB_SHA:0:7} run=${GITHUB_RUN_ID}"
+          echo "::group::${LOG_TITLE} context"
+          echo "event=${GITHUB_EVENT_NAME}"
+          echo "ref=${GITHUB_REF}"
+          echo "sha=${GITHUB_SHA}"
+          echo "actor=${GITHUB_ACTOR}"
+          echo "run_id=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}"
+          echo "job=${GITHUB_JOB} workflow=${GITHUB_WORKFLOW}"
+          echo "repository=${GITHUB_REPOSITORY}"
+          echo "--- extra ---"
+          echo "${LOG_EXTRA}"
+          echo "::endgroup::"
+          {
+            echo "### ${LOG_TITLE}"
+            echo ""
+            echo "Tag/release version: \`${{ needs.version.outputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require gh_env
+        if: ${{ inputs.use_gh_env }}
+        env:
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$GH_ENV" ]]; then
+            echo "::error::gh_env is required when use_gh_env is true"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Create git tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::Empty version; cannot create tag."
+            exit 1
+          fi
+
+          TAG="$VERSION"
+
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+            echo "::notice::Tag $TAG already exists on origin; skipping git tag."
+          elif git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            git push origin "$TAG"
+            echo "::notice::Pushed existing local tag $TAG"
+          else
+            git tag -a "$TAG" -m "chore(release): $TAG"
+            git push origin "$TAG"
+            echo "::notice::Pushed git tag $TAG"
+          fi
+
+          PRERELEASE_FLAG=()
+          if [[ "$VERSION" == *-* ]]; then
+            PRERELEASE_FLAG=(--prerelease)
+          fi
+
+          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "::notice::GitHub Release $TAG already exists; skipping."
+            exit 0
+          fi
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "Release ${TAG}" \
+            "${PRERELEASE_FLAG[@]}" \
+            --repo "$GH_REPO"
+
+          echo "::notice::Created GitHub Release $TAG"

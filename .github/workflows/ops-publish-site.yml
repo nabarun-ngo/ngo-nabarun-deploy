@@ -21,8 +21,15 @@ jobs:
   publish:
     name: Publish portal to gh-pages
     runs-on: ubuntu-latest
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Publish docs portal event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF} sha=${GITHUB_SHA:0:7}"
+
       - name: Checkout main
         uses: actions/checkout@v7
         with:
@@ -33,7 +40,7 @@ jobs:
           set -euo pipefail
 
           mkdir -p portal-out
-          cp -r docs/. portal-out/
+          cp docs/index.html portal-out/
 
           if [[ ! -f portal-out/index.html ]]; then
             echo "::error::portal-out/index.html not found after copy"

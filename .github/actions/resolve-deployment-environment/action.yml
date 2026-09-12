@@ -25,9 +25,9 @@ inputs:
     default: deploy
 
 outputs:
-  github_environment:
+  gh_env:
     description: GitHub Environment name to bind the calling job to.
-    value: ${{ steps.route.outputs.github_environment }}
+    value: ${{ steps.route.outputs.gh_env }}
   requires_approval:
     description: '"true" if the resolved environment has required reviewers.'
     value: ${{ steps.route.outputs.requires_approval }}
@@ -83,7 +83,7 @@ runs:
         fi
 
         echo "::notice::Resolved GitHub Environment: $GITHUB_ENV_NAME (approval_mode: $APPROVAL_MODE)"
-        echo "github_environment=$GITHUB_ENV_NAME"  >> "$GITHUB_OUTPUT"
+        echo "gh_env=$GITHUB_ENV_NAME"  >> "$GITHUB_OUTPUT"
         echo "requires_approval=$REQUIRES_APPROVAL" >> "$GITHUB_OUTPUT"
         echo "approval_mode=$APPROVAL_MODE"         >> "$GITHUB_OUTPUT"
 
@@ -98,7 +98,7 @@ runs:
           echo "| Trigger type | \`${{ inputs.trigger_type }}\` |"
           echo "| Target environment | \`${{ inputs.target_environment }}\` |"
           echo "| Workflow type | \`${{ inputs.workflow_type }}\` |"
-          echo "| **GitHub Environment** | **\`${{ steps.route.outputs.github_environment }}\`** |"
+          echo "| **GitHub Environment** | **\`${{ steps.route.outputs.gh_env }}\`** |"
           echo "| Requires approval | ${{ steps.route.outputs.requires_approval }} |"
           echo "| Approval mode | \`${{ steps.route.outputs.approval_mode }}\` |"
         } >> "$GITHUB_STEP_SUMMARY"

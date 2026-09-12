@@ -95,6 +95,15 @@ jobs:
       is_destructive: ${{ steps.check.outputs.is_destructive }}
 
     steps:
+      - name: Log run context
+        env:
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          echo "::notice::GCP ops validate operation=${{ inputs.operation }} env=${{ inputs.environment }}"
+          echo "::group::Dispatch inputs"
+          echo "${LOG_INPUTS}"
+          echo "::endgroup::"
+
       - name: Check destructive operation confirmation
         id: check
         env:
@@ -129,6 +138,15 @@ jobs:
       artifact_name: ${{ steps.op.outputs.artifact_name }}
 
     steps:
+      - name: Log run context
+        env:
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          echo "::notice::GCP ops execute ${{ inputs.operation }} env=${{ inputs.environment }} dry_run=${{ inputs.dry_run }}"
+          echo "::group::Execute inputs"
+          echo "${LOG_INPUTS}"
+          echo "::endgroup::"
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:

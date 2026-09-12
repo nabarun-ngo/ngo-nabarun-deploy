@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://deploy.platform/schemas/schedules.v1.schema.json",
   "title": "SchedulesConfig",
-  "description": "Schema for config/schedules/*.json — defines scheduled and dispatch-triggered test runs.",
+  "description": "Schema for config/schedules/*.json — scheduled test run profiles.",
   "type": "object",
   "required": ["schedules"],
   "additionalProperties": false,

@@ -3,14 +3,16 @@ name: CI — Validate
 # Runs on every PR and push to main.
 # Validates:
 #   1. All manifests in config/manifests/ against schemas/manifest.v1.schema.json
-#   2. Workflow YAML syntax (basic check via actionlint if available)
-#   3. Shell script lint (shellcheck on scripts/)
+#   2. Schedule JSON in config/schedules/ against schemas/schedules.v1.schema.json
+#   3. Workflow YAML syntax (basic check via actionlint if available)
+#   4. Shell script lint (shellcheck on scripts/)
 
 on:
   pull_request:
     branches: [main]
     paths:
       - 'config/manifests/**'
+      - 'config/schedules/**'
       - 'schemas/**'
       - 'scripts/**'
       - '.github/workflows/**'
@@ -20,7 +22,11 @@ on:
     branches: [main]
     paths:
       - 'config/manifests/**'
+      - 'config/schedules/**'
       - 'schemas/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+      - '.github/actions/**'
 
 permissions:
   contents: read
@@ -32,6 +38,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Validate manifests event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF} sha=${GITHUB_SHA:0:7}"
+
       - name: Checkout
         uses: actions/checkout@v7
 
@@ -48,6 +58,25 @@ jobs:
           set -euo pipefail
           chmod +x scripts/validate-manifests.sh
           scripts/validate-manifests.sh config/manifests/ schemas/manifest.v1.schema.json
+          echo "::notice::Manifest validation passed"
+          echo "### Manifests" >> "$GITHUB_STEP_SUMMARY"
+          echo "Validation passed for \`config/manifests/\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate schedule files
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(config/schedules/*.json)
+          if (( ${#files[@]} == 0 )); then
+            echo "::notice::No schedule JSON files"
+            exit 0
+          fi
+          for f in "${files[@]}"; do
+            check-jsonschema --schemafile schemas/schedules.v1.schema.json "$f"
+            echo "::notice::Validated $f"
+          done
+          echo "### Schedules" >> "$GITHUB_STEP_SUMMARY"
+          echo "Validation passed for \`config/schedules/\`." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write PR comment on failure
         if: failure() && github.event_name == 'pull_request'
@@ -66,6 +95,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Log run context
+        run: echo "::notice::Lint workflows event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF}"
+
       - name: Checkout
         uses: actions/checkout@v7
 
@@ -101,6 +133,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Log run context
+        run: echo "::notice::Lint scripts event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF}"
+
       - name: Checkout
         uses: actions/checkout@v7
 

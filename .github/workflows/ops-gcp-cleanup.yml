@@ -59,6 +59,10 @@ jobs:
       dry_run: ${{ steps.build.outputs.dry_run }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::GCP cleanup matrix event=${GITHUB_EVENT_NAME} envs=${{ github.event_name == 'workflow_dispatch' && inputs.environments || 'both' }}"
+
       - name: Build matrix
         id: build
         env:
@@ -80,6 +84,10 @@ jobs:
             echo "stale_days=$INPUT_DAYS"
             echo "dry_run=$INPUT_DRY"
           } >> "$GITHUB_OUTPUT"
+          echo "::notice::Cleanup matrix=$MATRIX keep=$INPUT_KEEP stale_days=$INPUT_DAYS dry_run=$INPUT_DRY"
+          echo "### Cleanup matrix" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$MATRIX\` keep=$INPUT_KEEP days=$INPUT_DAYS dry_run=$INPUT_DRY" >> "$GITHUB_STEP_SUMMARY"
 
   # ──────────────────────────────────────────────────────────────────────────
   # Cleanup per environment
@@ -95,6 +103,10 @@ jobs:
       name: ${{ matrix.environment }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::GCP cleanup ${{ matrix.environment }} keep=${{ needs.setup.outputs.keep_versions }} dry_run=${{ needs.setup.outputs.dry_run }}"
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:

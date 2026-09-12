@@ -21,17 +21,23 @@ on:
         type: string
         required: false
         default: stage
-      github_environment:
-        description: GitHub Environment name for secrets scoping.
+      use_gh_env:
+        description: Bind execute jobs to a GitHub Environment (reviewers / env secrets).
+        type: boolean
+        required: false
+        default: true
+      gh_env:
+        description: GitHub Environment name when use_gh_env is true (e.g. stage, tests-scheduled).
         type: string
-        required: true
+        required: false
+        default: ''
       doppler_project:
         description: Doppler project name for test secrets (empty = no Doppler).
         type: string
         required: false
         default: ''
       doppler_config:
-        description: Doppler config name for this environment.
+        description: Doppler config name for this environment (stg | prd).
         type: string
         required: false
         default: ''
@@ -59,8 +65,6 @@ on:
     secrets:
       PAT:
         required: true
-      DOPPLER_TOKEN:
-        required: false
 
     outputs:
       report_url:
@@ -75,24 +79,44 @@ on:
       failed_tests:
         description: Failed test cases.
         value: ${{ jobs.report.outputs.failed_tests }}
+      broken_tests:
+        description: Broken test cases.
+        value: ${{ jobs.report.outputs.broken_tests }}
+      tests_passed:
+        description: '"true" if the gate job succeeded.'
+        value: ${{ jobs.gate.outputs.tests_passed }}
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
-  # ──────────────────────────────────────────────────────────────────────────
-  # 1. Discover test features and build a sharded matrix
-  # ──────────────────────────────────────────────────────────────────────────
   discover:
     name: Discover test features
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.build_matrix.outputs.matrix }}
       feature_count: ${{ steps.build_matrix.outputs.feature_count }}
+      total_shards: ${{ steps.build_matrix.outputs.total_shards }}
 
     steps:
+      - name: Log run context
+        env:
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          echo "::notice::Discover tests — repo=${{ inputs.test_repository }} tags=${{ inputs.test_tags }} env=${{ inputs.target_environment }}"
+          echo "::group::Discover context"
+          echo "${LOG_INPUTS}"
+          echo "::endgroup::"
+
+      - name: Require test repository
+        env:
+          TEST_REPOSITORY: ${{ inputs.test_repository }}
+        run: |
+          if [[ -z "$TEST_REPOSITORY" ]]; then
+            echo "::error::test_repository is empty. Set repository variable TEST_REPOSITORY (org/repo)."
+            exit 1
+          fi
+
       - name: Checkout test repository
         uses: actions/checkout@v7
         with:
@@ -115,13 +139,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Find all feature files
-          FEATURE_FILES=$(find . -name '*.feature' -not -path '*/node_modules/*' | sort)
-          FEATURE_COUNT=$(echo "$FEATURE_FILES" | grep -c . || echo 0)
+          FEATURE_FILES=$(find . -name '*.feature' -not -path '*/node_modules/*' | sort || true)
+          FEATURE_COUNT=$(printf '%s\n' "$FEATURE_FILES" | grep -c '[^[:space:]]' || true)
+          FEATURE_COUNT=${FEATURE_COUNT:-0}
           echo "feature_count=$FEATURE_COUNT" >> "$GITHUB_OUTPUT"
           echo "::notice::Found $FEATURE_COUNT feature files"
 
-          # Build shard matrix: distribute features round-robin across shards
           SHARDS=$PARALLELISM
           if (( FEATURE_COUNT < SHARDS )); then
             SHARDS=$FEATURE_COUNT
@@ -130,31 +153,45 @@ jobs:
             SHARDS=1
           fi
 
-          # Build numeric shard index array
-          MATRIX_JSON=$(python3 -c "
-          import json, sys
-          shards = int('$SHARDS')
-          print(json.dumps({'shard': list(range(1, shards + 1)), 'total_shards': shards}))
-          ")
-
+          MATRIX_JSON=$(jq -nc --argjson n "$SHARDS" '{shard:[range(1;$n+1)]}')
           echo "matrix=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
-          echo "::notice::Matrix: $MATRIX_JSON"
+          echo "total_shards=$SHARDS" >> "$GITHUB_OUTPUT"
+          echo "::notice::Matrix: $MATRIX_JSON total_shards=$SHARDS"
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 2. Execute tests in parallel shards
-  # ──────────────────────────────────────────────────────────────────────────
   execute:
-    name: Test shard ${{ matrix.shard }}/${{ needs.discover.outputs.matrix && fromJson(needs.discover.outputs.matrix).total_shards || inputs.parallelism }}
+    name: Test shard ${{ matrix.shard }}/${{ needs.discover.outputs.total_shards }}
     needs: discover
     runs-on: ${{ inputs.runner_os }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
     environment:
-      name: ${{ inputs.github_environment }}
+      name: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
 
     steps:
+      - name: Log run context
+        env:
+          LOG_MATRIX: ${{ toJSON(matrix) }}
+        run: |
+          echo "::notice::Test shard ${{ matrix.shard }} tags=${{ inputs.test_tags }} env=${{ inputs.target_environment }} gh_env=${{ inputs.gh_env }}"
+          echo "::group::Shard context"
+          echo "test_repository=${{ inputs.test_repository }}"
+          echo "doppler_project=${{ inputs.doppler_project }}"
+          echo "timeout_minutes=${{ inputs.timeout_minutes }}"
+          echo "${LOG_MATRIX}"
+          echo "::endgroup::"
+
+      - name: Require gh_env
+        if: ${{ inputs.use_gh_env }}
+        env:
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$GH_ENV" ]]; then
+            echo "::error::gh_env is required when use_gh_env is true"
+            exit 1
+          fi
+
       - name: Checkout test repository
         uses: actions/checkout@v7
         with:
@@ -173,36 +210,52 @@ jobs:
         if: ${{ inputs.doppler_project != '' }}
         uses: dopplerhq/cli-action@v4
 
-      - name: Run Cucumber tests (with Doppler)
+      - name: Require Doppler token
         if: ${{ inputs.doppler_project != '' }}
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$DOPPLER_TOKEN" ]]; then
+            echo "::error::DOPPLER_TOKEN is empty for GitHub Environment '${GH_ENV}'. Add it as an environment secret."
+            exit 1
+          fi
+
+      - name: Run Cucumber tests (with Doppler)
+        id: mvn_doppler
+        if: ${{ inputs.doppler_project != '' }}
+        continue-on-error: true
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_PROJECT: ${{ inputs.doppler_project }}
+          DOPPLER_CONFIG: ${{ inputs.doppler_config }}
           TEST_TAGS: ${{ inputs.test_tags }}
           SHARD_INDEX: ${{ matrix.shard }}
-          TOTAL_SHARDS: ${{ fromJson(needs.discover.outputs.matrix).total_shards }}
+          TOTAL_SHARDS: ${{ needs.discover.outputs.total_shards }}
           TARGET_ENV: ${{ inputs.target_environment }}
         run: |
           doppler run \
-            --project="${{ inputs.doppler_project }}" \
-            --config="${{ inputs.doppler_config }}" \
+            --project="$DOPPLER_PROJECT" \
+            --config="$DOPPLER_CONFIG" \
             --token="$DOPPLER_TOKEN" \
             -- mvn test \
               -Dcucumber.filter.tags="$TEST_TAGS" \
               -DCONFIG_SOURCE=doppler \
-              -DDOPPLER_PROJECT_NAME="${{ inputs.doppler_project }}" \
+              -DDOPPLER_PROJECT_NAME="$DOPPLER_PROJECT" \
               -DTARGET_ENV="$TARGET_ENV" \
               -DSHARD_INDEX="$SHARD_INDEX" \
               -DTOTAL_SHARDS="$TOTAL_SHARDS" \
               -Dallure.results.directory=allure-results \
-              --batch-mode --no-transfer-progress \
-            || true  # allow test failures to surface in report rather than failing the job
+              --batch-mode --no-transfer-progress
 
       - name: Run Cucumber tests (without Doppler)
+        id: mvn_plain
         if: ${{ inputs.doppler_project == '' }}
+        continue-on-error: true
         env:
           TEST_TAGS: ${{ inputs.test_tags }}
           SHARD_INDEX: ${{ matrix.shard }}
-          TOTAL_SHARDS: ${{ fromJson(needs.discover.outputs.matrix).total_shards }}
+          TOTAL_SHARDS: ${{ needs.discover.outputs.total_shards }}
           TARGET_ENV: ${{ inputs.target_environment }}
         run: |
           mvn test \
@@ -211,8 +264,20 @@ jobs:
             -DSHARD_INDEX="$SHARD_INDEX" \
             -DTOTAL_SHARDS="$TOTAL_SHARDS" \
             -Dallure.results.directory=allure-results \
-            --batch-mode --no-transfer-progress \
-          || true
+            --batch-mode --no-transfer-progress
+
+      - name: Record Maven outcome
+        env:
+          DOPPLER_OUTCOME: ${{ steps.mvn_doppler.outcome }}
+          PLAIN_OUTCOME: ${{ steps.mvn_plain.outcome }}
+          USE_DOPPLER: ${{ inputs.doppler_project != '' }}
+        run: |
+          if [[ "$USE_DOPPLER" == "true" && "$DOPPLER_OUTCOME" == "failure" ]]; then
+            echo "::warning::Maven (Doppler) failed on shard ${{ matrix.shard }} — results still uploaded"
+          fi
+          if [[ "$USE_DOPPLER" != "true" && "$PLAIN_OUTCOME" == "failure" ]]; then
+            echo "::warning::Maven failed on shard ${{ matrix.shard }} — results still uploaded"
+          fi
 
       - name: Upload Allure results shard
         uses: actions/upload-artifact@v7
@@ -221,23 +286,28 @@ jobs:
           name: allure-results-shard-${{ matrix.shard }}
           path: allure-results/
           retention-days: 1
-          if-no-files-found: warn
+          if-no-files-found: error
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 3. Publish Allure report to gh-pages
-  # ──────────────────────────────────────────────────────────────────────────
   report:
     name: Publish Allure report
-    needs: execute
-    if: always()
+    needs: [discover, execute]
+    if: ${{ always() && needs.discover.result == 'success' }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
     outputs:
       report_url: ${{ steps.publish.outputs.report_url }}
       total_tests: ${{ steps.summary.outputs.total_tests }}
       passed_tests: ${{ steps.summary.outputs.passed_tests }}
       failed_tests: ${{ steps.summary.outputs.failed_tests }}
+      broken_tests: ${{ steps.summary.outputs.broken_tests }}
 
     steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Publish Allure — execute=${{ needs.execute.result }} title=${{ inputs.report_title }}"
+
       - name: Checkout platform repo
         uses: actions/checkout@v7
 
@@ -250,10 +320,13 @@ jobs:
           gh_pages_branch: gh-pages
           report_base_path: allure-report
           max_history: '20'
-          github_token: ${{ secrets.PAT }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Parse test summary stats
         id: summary
+        env:
+          TEST_TAGS: ${{ inputs.test_tags }}
+          REPORT_URL: ${{ steps.publish.outputs.report_url }}
         run: |
           set -euo pipefail
 
@@ -265,6 +338,7 @@ jobs:
             BROKEN=$(jq '.statistic.broken // 0' "$SUMMARY_JSON")
             SKIPPED=$(jq '.statistic.skipped // 0' "$SUMMARY_JSON")
           else
+            echo "::error::allure-html/widgets/summary.json missing after generate"
             TOTAL=0; PASSED=0; FAILED=0; BROKEN=0; SKIPPED=0
           fi
 
@@ -272,18 +346,77 @@ jobs:
             echo "total_tests=$TOTAL"
             echo "passed_tests=$PASSED"
             echo "failed_tests=$FAILED"
+            echo "broken_tests=$BROKEN"
           } >> "$GITHUB_OUTPUT"
 
           {
-            echo "### Test Results — ${{ inputs.test_tags }}"
+            echo "### Test Results — ${TEST_TAGS}"
             echo ""
             echo "| Status | Count |"
             echo "|--------|-------|"
             echo "| Total | $TOTAL |"
-            echo "| ✅ Passed | $PASSED |"
-            echo "| ❌ Failed | $FAILED |"
-            echo "| 🔴 Broken | $BROKEN |"
-            echo "| ⏭ Skipped | $SKIPPED |"
+            echo "| Passed | $PASSED |"
+            echo "| Failed | $FAILED |"
+            echo "| Broken | $BROKEN |"
+            echo "| Skipped | $SKIPPED |"
             echo ""
-            echo "📊 [View full Allure report](${{ steps.publish.outputs.report_url }})"
+            echo "[View full Allure report](${REPORT_URL})"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  gate:
+    name: Test result gate
+    needs: [discover, execute, report]
+    if: always()
+    runs-on: ubuntu-latest
+    outputs:
+      tests_passed: ${{ steps.gate.outputs.tests_passed }}
+
+    steps:
+      - name: Evaluate gate
+        id: gate
+        env:
+          DISCOVER_RESULT: ${{ needs.discover.result }}
+          EXECUTE_RESULT: ${{ needs.execute.result }}
+          REPORT_RESULT: ${{ needs.report.result }}
+          TOTAL: ${{ needs.report.outputs.total_tests }}
+          FAILED: ${{ needs.report.outputs.failed_tests }}
+          BROKEN: ${{ needs.report.outputs.broken_tests }}
+        run: |
+          set -euo pipefail
+          ok=true
+          TOTAL=${TOTAL:-0}
+          FAILED=${FAILED:-0}
+          BROKEN=${BROKEN:-0}
+
+          if [[ "$DISCOVER_RESULT" != "success" ]]; then
+            echo "::error::Discover job did not succeed (${DISCOVER_RESULT})"
+            ok=false
+          fi
+          if [[ "$EXECUTE_RESULT" == "failure" || "$EXECUTE_RESULT" == "cancelled" ]]; then
+            echo "::error::Execute job result is ${EXECUTE_RESULT}"
+            ok=false
+          fi
+          if [[ "$REPORT_RESULT" != "success" ]]; then
+            echo "::error::Report job did not succeed (${REPORT_RESULT})"
+            ok=false
+          fi
+          if [[ "$TOTAL" == "0" || -z "$TOTAL" ]]; then
+            echo "::error::No tests recorded (total=${TOTAL})"
+            ok=false
+          fi
+          if [[ "$FAILED" != "0" ]]; then
+            echo "::error::Failed tests: ${FAILED}"
+            ok=false
+          fi
+          if [[ "$BROKEN" != "0" ]]; then
+            echo "::error::Broken tests: ${BROKEN}"
+            ok=false
+          fi
+
+          if [[ "$ok" == "true" ]]; then
+            echo "tests_passed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Test gate passed (total=${TOTAL})"
+          else
+            echo "tests_passed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi

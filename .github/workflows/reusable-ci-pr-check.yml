@@ -58,6 +58,16 @@ on:
         type: string
         required: false
         default: 'coverage'
+      use_gh_env:
+        description: Bind the job to a GitHub Environment (reviewers / env secrets).
+        type: boolean
+        required: false
+        default: false
+      gh_env:
+        description: GitHub Environment name when use_gh_env is true (e.g. stage, prod).
+        type: string
+        required: false
+        default: ''
 
     outputs:
       build_status:
@@ -73,10 +83,35 @@ jobs:
   check:
     name: Build check
     runs-on: ubuntu-latest
+    environment: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
     outputs:
       build_status: ${{ steps.result.outputs.build_status }}
 
     steps:
+      - name: Log run context
+        env:
+          LOG_TITLE: PR Build check
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          set -euo pipefail
+          echo "::notice::${LOG_TITLE} — ${GITHUB_EVENT_NAME} ${GITHUB_REF} sha=${GITHUB_SHA:0:7} run=${GITHUB_RUN_ID}"
+          echo "::group::${LOG_TITLE} context"
+          echo "event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF} sha=${GITHUB_SHA}"
+          echo "head_ref=${GITHUB_HEAD_REF} base_ref=${GITHUB_BASE_REF}"
+          echo "job=${GITHUB_JOB} actor=${GITHUB_ACTOR} run=${GITHUB_RUN_ID}"
+          echo "${LOG_INPUTS}"
+          echo "::endgroup::"
+
+      - name: Require gh_env
+        if: ${{ inputs.use_gh_env }}
+        env:
+          GH_ENV: ${{ inputs.gh_env }}
+        run: |
+          if [[ -z "$GH_ENV" ]]; then
+            echo "::error::gh_env is required when use_gh_env is true"
+            exit 1
+          fi
+
       - name: Checkout PR branch
         uses: actions/checkout@v7
         with:
@@ -165,4 +200,13 @@ jobs:
             fi
             echo ""
             echo "**Ref:** \`${{ github.sha }}\` on \`${HEAD_REF}\`"
+            echo ""
+            echo "<details><summary>commands</summary>"
+            echo ""
+            echo "- install: \`${{ inputs.install_command }}\`"
+            echo "- type-check: \`${{ inputs.type_check_command }}\`"
+            echo "- lint: \`${{ inputs.lint_command }}\`"
+            echo "- build: \`${{ inputs.build_command }}\`"
+            echo "- tests: \`${{ inputs.test_command }}\` (enable_tests=${{ inputs.enable_tests }})"
+            echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"

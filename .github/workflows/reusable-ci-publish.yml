@@ -341,6 +341,16 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: ${{ inputs.publish_command }}
 
+      - name: Upload complete .npm directory on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-directory-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /home/runner/.npm/**
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Publish outcome
         if: always()
         run: |

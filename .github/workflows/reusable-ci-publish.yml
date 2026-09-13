@@ -260,6 +260,9 @@ jobs:
     environment: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
 
     steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v7
+        
       - name: Log run context
         env:
           LOG_TITLE: Publish npm

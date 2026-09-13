@@ -314,6 +314,8 @@ jobs:
             echo "::error::NPM_TOKEN is required when publish_to_npm is true"
             exit 1
           fi
+          echo "NPM Who am I?"
+          npm whoami
 
       - name: Checkout
         uses: actions/checkout@v4

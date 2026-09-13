@@ -1,0 +1,72 @@
+name: Upload npm Logs
+description: Collect and upload npm debug logs and environment diagnostics
+
+inputs:
+  artifact-name:
+    description: Name of the uploaded artifact
+    required: false
+    default: npm-logs
+  retention-days:
+    description: Number of days to retain the artifact
+    required: false
+    default: "14"
+
+runs:
+  using: composite
+  steps:
+    - name: Collect npm diagnostics
+      shell: bash
+      run: |
+        set +e
+
+        ARTIFACT_DIR="${RUNNER_TEMP}/npm-debug"
+        NPM_CACHE="$(npm config get cache 2>/dev/null)"
+
+        mkdir -p "$ARTIFACT_DIR"
+
+        echo "=== npm diagnostics ==="
+
+        {
+          echo "Runner OS: ${RUNNER_OS}"
+          echo "Runner: ${RUNNER_NAME}"
+          echo "Node: $(node --version 2>&1)"
+          echo "npm: $(npm --version 2>&1)"
+          echo "npm cache: ${NPM_CACHE}"
+          echo "npm registry: $(npm config get registry 2>&1)"
+          echo "Working directory: ${GITHUB_WORKSPACE}"
+          echo "Repository: ${GITHUB_REPOSITORY}"
+          echo "Run ID: ${GITHUB_RUN_ID}"
+          echo "Run attempt: ${GITHUB_RUN_ATTEMPT}"
+          echo ""
+          echo "=== npm configuration ==="
+          npm config list 2>&1
+          echo ""
+          echo "=== npm cache contents ==="
+          ls -la "${NPM_CACHE}" 2>&1 || true
+          echo ""
+          echo "=== npm log directory ==="
+          ls -la "${NPM_CACHE}/_logs" 2>&1 || true
+          echo ""
+          echo "=== npm log files ==="
+          find "${NPM_CACHE}/_logs" \
+            -maxdepth 1 \
+            -type f \
+            -print 2>&1 || true
+        } > "${ARTIFACT_DIR}/environment.txt"
+
+        # Copy all npm debug logs.
+        if [ -d "${NPM_CACHE}/_logs" ]; then
+          cp -R "${NPM_CACHE}/_logs/." "${ARTIFACT_DIR}/" 2>/dev/null || true
+        fi
+
+        echo ""
+        echo "=== Files collected ==="
+        find "${ARTIFACT_DIR}" -type f -print
+
+    - name: Upload npm logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/npm-debug/**
+        if-no-files-found: error
+        retention-days: ${{ inputs.retention-days }}

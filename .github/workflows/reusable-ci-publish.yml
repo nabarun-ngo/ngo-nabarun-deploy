@@ -171,7 +171,7 @@ jobs:
         run: npm ci
 
       - name: Version Packages pull request
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
           cwd: ${{ inputs.working_directory }}
           version: ${{ inputs.version_command }}

@@ -123,10 +123,12 @@ Do not share `DOPPLER_TOKEN` across environments.
 
 ## “Latest” tag resolution
 
-When ops leave `tag_name` empty or `latest`, [resolve-git-ref](../.github/actions/resolve-git-ref/action.yml) picks the highest semver tag (`v` prefix optional):
+When ops leave `tag_name` empty or `latest`, [resolve-git-ref](../.github/actions/resolve-git-ref/action.yml) picks the highest semver tag that is contained in the target branch (`v` prefix optional):
 
-- `stage` → latest `X.Y.Z-(alpha|beta|rc).N`
-- `main` / prod → latest stable `X.Y.Z`
+- `stage` → latest `X.Y.Z-(alpha|beta|rc).N` on that branch. If the branch has no prerelease tag, it falls back to the latest stable tag on that branch.
+- `main` / prod → latest stable `X.Y.Z` on that branch.
+
+Tags that exist only on another branch are ignored.
 
 ## Schedules
 

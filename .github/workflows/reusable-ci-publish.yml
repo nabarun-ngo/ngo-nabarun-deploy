@@ -1,10 +1,9 @@
-name: Reusable — CI Changesets version / npm / tags
+name: Reusable — CI Changesets version / npm
 
-# workflow_call only.
+# workflow_call only. Changesets repos only.
 # Job 1 version — always: Version Packages PR, or expose package.json version.
 # Job 2 npm — if publish_to_npm and version is already in git (publish_command from caller).
-# Job 3 tags_and_releases — if create_tags_and_releases and version is in git.
-# Git tags are the bare semver (no v prefix). No auto_deploy.
+# Does not create git tags or GitHub Releases. No auto_deploy.
 
 on:
   workflow_call:
@@ -35,17 +34,37 @@ on:
         required: false
         default: true
       publish_command:
-        description: Command the caller wants to run to publish (e.g. npm run release or npm run release:beta).
+        description: Command used to publish stable versions.
         type: string
         required: false
         default: 'npm run release'
-      create_tags_and_releases:
-        description: Create a git tag and GitHub Release from version_file (no v prefix).
+      prerelease_publish_command:
+        description: Command used on prerelease_branch (normally publishes with the prerelease npm dist-tag).
+        type: string
+        required: false
+        default: 'npm run release:beta'
+      manage_prerelease_mode:
+        description: Automatically enter prerelease mode on prerelease_branch and exit it on stable_branch.
         type: boolean
         required: false
-        default: false
+        default: true
+      stable_branch:
+        description: Branch that publishes stable versions.
+        type: string
+        required: false
+        default: 'main'
+      prerelease_branch:
+        description: Branch that publishes prerelease versions.
+        type: string
+        required: false
+        default: 'stage'
+      prerelease_tag:
+        description: Changesets prerelease tag and npm dist-tag.
+        type: string
+        required: false
+        default: 'beta'
       version_file:
-        description: Repo-relative package.json used as the version / tag source.
+        description: package.json relative to working_directory. Informational when a version field exists. Publish readiness does not depend on it.
         type: string
         required: false
         default: 'package.json'
@@ -81,8 +100,12 @@ on:
         description: '"true" when no pending changesets (versions already in git).'
         value: ${{ jobs.version.outputs.version_ready }}
       version:
-        description: Semver from version_file when version_ready (no v prefix).
+        description: Semver from version_file when that file has a version field. Empty for private workspace roots.
         value: ${{ jobs.version.outputs.version }}
+
+concurrency:
+  group: release-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -157,6 +180,17 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN }}
 
+      - name: Remember repository npmrc
+        id: npmrc
+        run: |
+          set -euo pipefail
+          if [[ -f .npmrc ]]; then
+            cp .npmrc /tmp/repo-npmrc
+            echo "existed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "existed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup Node.js ${{ inputs.node_version }}
         uses: actions/setup-node@v4
         with:
@@ -170,7 +204,141 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         run: npm ci
 
+      - name: Restore repository npmrc
+        env:
+          NPMRC_EXISTED: ${{ steps.npmrc.outputs.existed }}
+        run: |
+          set -euo pipefail
+          if [[ "$NPMRC_EXISTED" == "true" ]]; then
+            cp /tmp/repo-npmrc .npmrc
+          else
+            rm -f .npmrc
+          fi
+
+      - name: Inspect pending changesets
+        id: pending
+        env:
+          WORK_DIR: ${{ inputs.working_directory }}
+        run: |
+          set -euo pipefail
+
+          CS_DIR="${WORK_DIR}/.changeset"
+          [[ "$WORK_DIR" == "." ]] && CS_DIR=".changeset"
+          if [[ ! -d "$CS_DIR" ]]; then
+            echo "::error::Changesets directory not found: $CS_DIR"
+            exit 1
+          fi
+
+          PENDING=0
+          while IFS= read -r -d '' file; do
+            [[ "$(basename "$file")" == "README.md" ]] && continue
+            PENDING=$((PENDING + 1))
+          done < <(find "$CS_DIR" -maxdepth 1 -type f -name '*.md' -print0)
+
+          echo "count=$PENDING" >> "$GITHUB_OUTPUT"
+          echo "::notice::Pending changesets before versioning: $PENDING"
+
+      - name: Configure Changesets prerelease mode
+        id: pre_mode
+        if: ${{ inputs.manage_prerelease_mode }}
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          CURRENT_BRANCH: ${{ github.ref_name }}
+          STABLE_BRANCH: ${{ inputs.stable_branch }}
+          PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
+          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
+          PENDING_COUNT: ${{ steps.pending.outputs.count }}
+        run: |
+          set -euo pipefail
+
+          PRE_FILE=".changeset/pre.json"
+          TRANSITION="none"
+
+          if [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]]; then
+            if [[ -f "$PRE_FILE" ]]; then
+              MODE=$(jq -r '.mode // empty' "$PRE_FILE")
+              TAG=$(jq -r '.tag // empty' "$PRE_FILE")
+              if [[ "$MODE" != "pre" || "$TAG" != "$PRERELEASE_TAG" ]]; then
+                echo "::error::$PRE_FILE must use mode=pre and tag=$PRERELEASE_TAG on $PRERELEASE_BRANCH"
+                exit 1
+              fi
+              echo "::notice::$PRERELEASE_BRANCH is already in $PRERELEASE_TAG prerelease mode"
+            elif [[ "$PENDING_COUNT" -gt 0 ]]; then
+              npx changeset pre enter "$PRERELEASE_TAG"
+              TRANSITION="enter"
+              echo "::notice::Entered $PRERELEASE_TAG prerelease mode on $PRERELEASE_BRANCH"
+            else
+              echo "::notice::No pending changesets; prerelease mode will begin with the next release change"
+            fi
+          elif [[ "$CURRENT_BRANCH" == "$STABLE_BRANCH" && -f "$PRE_FILE" ]]; then
+            MODE=$(jq -r '.mode // empty' "$PRE_FILE")
+            if [[ "$MODE" == "pre" ]]; then
+              npx changeset pre exit
+              TRANSITION="exit"
+              echo "::notice::Exiting prerelease mode on $STABLE_BRANCH"
+            elif [[ "$MODE" == "exit" ]]; then
+              TRANSITION="exit"
+              echo "::notice::Prerelease exit is already pending on $STABLE_BRANCH"
+            else
+              echo "::error::Unsupported Changesets prerelease mode '$MODE' in $PRE_FILE"
+              exit 1
+            fi
+          fi
+
+          echo "transition=$TRANSITION" >> "$GITHUB_OUTPUT"
+
+      - name: Open Version Packages pull request for prerelease transition
+        if: ${{ steps.pre_mode.outputs.transition == 'exit' && steps.pending.outputs.count == '0' }}
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          CURRENT_BRANCH: ${{ github.ref_name }}
+          VERSION_COMMAND: ${{ inputs.version_command }}
+          PR_TITLE: ${{ inputs.changeset_title }}
+          PR_COMMIT: ${{ inputs.changeset_commit }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$VERSION_COMMAND" ]]; then
+            echo "::error::version_command is empty"
+            exit 1
+          fi
+
+          bash -euo pipefail -c "$VERSION_COMMAND"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::error::Prerelease transition did not change the tree, so no Version Packages pull request was opened."
+            exit 1
+          fi
+
+          BRANCH="changeset-release/${CURRENT_BRANCH}"
+          git checkout -B "$BRANCH"
+          git commit -m "$PR_COMMIT"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git push --force-with-lease origin "HEAD:${BRANCH}"
+          else
+            git push origin "HEAD:${BRANCH}"
+          fi
+
+          if gh pr view "$BRANCH" --repo "$GH_REPO" --json url --jq .url >/dev/null 2>&1; then
+            echo "::notice::Updated Version Packages pull request for ${BRANCH}"
+          else
+            gh pr create \
+              --repo "$GH_REPO" \
+              --base "$CURRENT_BRANCH" \
+              --head "$BRANCH" \
+              --title "$PR_TITLE" \
+              --body "Changesets prerelease transition. Review the version and changelog updates, then merge."
+            echo "::notice::Opened Version Packages pull request for ${BRANCH}"
+          fi
+
       - name: Version Packages pull request
+        if: ${{ steps.pending.outputs.count != '0' }}
         uses: changesets/action@v1
         with:
           cwd: ${{ inputs.working_directory }}
@@ -186,15 +354,33 @@ jobs:
         env:
           WORK_DIR: ${{ inputs.working_directory }}
           VERSION_FILE: ${{ inputs.version_file }}
+          CURRENT_BRANCH: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          STABLE_BRANCH: ${{ inputs.stable_branch }}
+          PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
+          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
+          MANAGE_PRERELEASE: ${{ inputs.manage_prerelease_mode }}
+          PENDING: ${{ steps.pending.outputs.count }}
+          PRE_TRANSITION: ${{ steps.pre_mode.outputs.transition || 'none' }}
         run: |
           set -euo pipefail
+
+          write_output() {
+            local ready="$1"
+            local version="$2"
+            {
+              echo "version_ready=${ready}"
+              echo "version<<VERSION_EOF"
+              echo "$version"
+              echo "VERSION_EOF"
+            } >> "$GITHUB_OUTPUT"
+          }
 
           CS_DIR=".changeset"
           if [[ "$WORK_DIR" != "." ]]; then
             CS_DIR="${WORK_DIR}/.changeset"
           fi
 
-          PENDING=0
           PENDING_LIST=""
           if [[ -d "$CS_DIR" ]]; then
             echo "::group::Changeset directory ${CS_DIR}"
@@ -205,24 +391,25 @@ jobs:
               if [[ "$base" == "README.md" ]]; then
                 continue
               fi
-              PENDING=$((PENDING + 1))
               PENDING_LIST="${PENDING_LIST}${base}"$'\n'
             done < <(find "$CS_DIR" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null || true)
-          else
-            echo "::notice::No changeset directory at ${CS_DIR}"
           fi
 
-          if [[ "$PENDING" -gt 0 ]]; then
-            echo "version_ready=false" >> "$GITHUB_OUTPUT"
-            echo "version=" >> "$GITHUB_OUTPUT"
-            echo "::notice::Pending changesets ($PENDING); Version Packages PR only."
+          if [[ "$REF_TYPE" != "branch" || ( "$CURRENT_BRANCH" != "$STABLE_BRANCH" && "$CURRENT_BRANCH" != "$PRERELEASE_BRANCH" ) ]]; then
+            echo "::error::Ref '$CURRENT_BRANCH' ($REF_TYPE) is neither $STABLE_BRANCH nor $PRERELEASE_BRANCH."
+            exit 1
+          fi
+
+          if [[ "$PENDING" -gt 0 || "$PRE_TRANSITION" != "none" ]]; then
+            write_output false ""
+            echo "::notice::Release changes detected (changesets=$PENDING prerelease_transition=$PRE_TRANSITION); Version Packages PR only."
             echo "::group::Pending changeset files"
             printf '%s' "$PENDING_LIST"
             echo "::endgroup::"
             {
               echo "### Version gate"
               echo ""
-              echo "version_ready: \`false\` — $PENDING pending changeset(s)."
+              echo "version_ready: \`false\` — $PENDING pending changeset(s), prerelease transition \`$PRE_TRANSITION\`."
               echo ""
               echo '```'
               printf '%s' "$PENDING_LIST"
@@ -231,25 +418,47 @@ jobs:
             exit 0
           fi
 
-          if [[ ! -f "$VERSION_FILE" ]]; then
-            echo "::error::version_file not found: $VERSION_FILE"
+          PRE_FILE="${CS_DIR}/pre.json"
+          PRE_MODE=""
+          PRE_TAG=""
+          if [[ -f "$PRE_FILE" ]]; then
+            PRE_MODE=$(jq -r '.mode // empty' "$PRE_FILE")
+            PRE_TAG=$(jq -r '.tag // empty' "$PRE_FILE")
+          fi
+
+          if [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]]; then
+            if [[ "$MANAGE_PRERELEASE" == "true" && ( "$PRE_MODE" != "pre" || "$PRE_TAG" != "$PRERELEASE_TAG" ) ]]; then
+              write_output false ""
+              echo "::notice::$PRERELEASE_BRANCH is not in $PRERELEASE_TAG prerelease mode yet."
+              exit 0
+            fi
+          elif [[ -f "$PRE_FILE" ]]; then
+            echo "::error::$STABLE_BRANCH still has $PRE_FILE (mode=$PRE_MODE). Refusing to publish a prerelease as latest."
             exit 1
           fi
 
-          VERSION=$(jq -r '.version // empty' "$VERSION_FILE")
-          if [[ -z "$VERSION" || "$VERSION" == "null" ]]; then
-            echo "::error::No version field in $VERSION_FILE"
-            exit 1
+          VERSION=""
+          VERSION_PATH="$VERSION_FILE"
+          if [[ "$WORK_DIR" != "." && "$VERSION_FILE" != /* ]]; then
+            VERSION_PATH="${WORK_DIR}/${VERSION_FILE}"
+          fi
+          if [[ -f "$VERSION_PATH" ]]; then
+            VERSION=$(jq -r '.version // empty' "$VERSION_PATH")
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              VERSION=""
+            fi
           fi
 
-          echo "version_ready=true" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "::notice::Version ready: $VERSION"
+          write_output true "$VERSION"
+          echo "::notice::Version ready for publish on $CURRENT_BRANCH"
           {
             echo "### Version gate"
             echo ""
             echo "version_ready: \`true\`"
-            echo "version: \`$VERSION\` from \`$VERSION_FILE\`"
+            echo "prerelease mode: \`${PRE_MODE:-none}\`"
+            if [[ -n "$VERSION" ]]; then
+              echo "version file: \`$VERSION\` from \`$VERSION_PATH\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   npm:
@@ -267,6 +476,7 @@ jobs:
           LOG_EXTRA: |
             version=${{ needs.version.outputs.version }}
             version_ready=${{ needs.version.outputs.version_ready }}
+            branch=${{ github.ref_name }}
             npm_token_present=${{ secrets.NPM_TOKEN != '' }}
         run: |
           set -euo pipefail
@@ -291,7 +501,9 @@ jobs:
             echo "| Field | Value |"
             echo "|-------|-------|"
             echo "| Version | \`${{ needs.version.outputs.version }}\` |"
-            echo "| publish_command | \`${{ inputs.publish_command }}\` |"
+            echo "| Branch | \`${{ github.ref_name }}\` |"
+            echo "| stable command | \`${{ inputs.publish_command }}\` |"
+            echo "| prerelease command | \`${{ inputs.prerelease_publish_command }}\` |"
             echo "| npm token present | \`${{ secrets.NPM_TOKEN != '' }}\` |"
             echo "| Job | ${{ job.status }} |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -339,7 +551,46 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: ${{ inputs.publish_command }}
+          CURRENT_BRANCH: ${{ github.ref_name }}
+          STABLE_BRANCH: ${{ inputs.stable_branch }}
+          PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
+          STABLE_COMMAND: ${{ inputs.publish_command }}
+          PRERELEASE_COMMAND: ${{ inputs.prerelease_publish_command }}
+        run: |
+          set -euo pipefail
+
+          run_publish() {
+            local command="$1"
+            if [[ -z "$command" ]]; then
+              echo "::error::Publish command is empty"
+              exit 1
+            fi
+            bash -euo pipefail -c "$command"
+          }
+
+          if [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]]; then
+            echo "::notice::Running prerelease publish command: $PRERELEASE_COMMAND"
+            run_publish "$PRERELEASE_COMMAND"
+          elif [[ "$CURRENT_BRANCH" == "$STABLE_BRANCH" ]]; then
+            if [[ -f .changeset/pre.json ]]; then
+              echo "::error::Refusing to publish on $STABLE_BRANCH while .changeset/pre.json exists"
+              exit 1
+            fi
+            while IFS= read -r -d '' pkg; do
+              private=$(jq -r '.private // false' "$pkg")
+              ver=$(jq -r '.version // empty' "$pkg")
+              [[ "$private" == "true" || -z "$ver" || "$ver" == "null" ]] && continue
+              if [[ "$ver" == *-* ]]; then
+                echo "::error::$pkg is $ver. Refusing to publish a prerelease as latest."
+                exit 1
+              fi
+            done < <(find . -name node_modules -prune -o -name package.json -print0)
+            echo "::notice::Running stable publish command: $STABLE_COMMAND"
+            run_publish "$STABLE_COMMAND"
+          else
+            echo "::error::Refusing to publish from branch '$CURRENT_BRANCH'"
+            exit 1
+          fi
 
       - name: Upload npm diagnostics
         if: ${{ failure() }}
@@ -351,105 +602,5 @@ jobs:
       - name: Publish outcome
         if: always()
         run: |
-          echo "::notice::npm publish job ${{ job.status }} version=${{ needs.version.outputs.version }} command=${{ inputs.publish_command }}"
+          echo "::notice::npm publish job ${{ job.status }} version=${{ needs.version.outputs.version }} branch=${{ github.ref_name }}"
           echo "**npm job:** ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
-
-  tags_and_releases:
-    name: Git tags and GitHub Releases
-    needs: version
-    if: ${{ inputs.create_tags_and_releases && needs.version.outputs.version_ready == 'true' }}
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
-
-    steps:
-      - name: Log run context
-        env:
-          LOG_TITLE: Git tags and GitHub Releases
-          LOG_INPUTS: ${{ toJSON(inputs) }}
-          LOG_EXTRA: |
-            version=${{ needs.version.outputs.version }}
-            version_ready=${{ needs.version.outputs.version_ready }}
-        run: |
-          set -euo pipefail
-          echo "::notice::${LOG_TITLE} — ${GITHUB_EVENT_NAME} ${GITHUB_REF} sha=${GITHUB_SHA:0:7} run=${GITHUB_RUN_ID}"
-          echo "::group::${LOG_TITLE} context"
-          echo "event=${GITHUB_EVENT_NAME}"
-          echo "ref=${GITHUB_REF}"
-          echo "sha=${GITHUB_SHA}"
-          echo "actor=${GITHUB_ACTOR}"
-          echo "run_id=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}"
-          echo "job=${GITHUB_JOB} workflow=${GITHUB_WORKFLOW}"
-          echo "repository=${GITHUB_REPOSITORY}"
-          echo "--- extra ---"
-          echo "${LOG_EXTRA}"
-          echo "::endgroup::"
-          {
-            echo "### ${LOG_TITLE}"
-            echo ""
-            echo "Tag/release version: \`${{ needs.version.outputs.version }}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Require gh_env
-        if: ${{ inputs.use_gh_env }}
-        env:
-          GH_ENV: ${{ inputs.gh_env }}
-        run: |
-          if [[ -z "$GH_ENV" ]]; then
-            echo "::error::gh_env is required when use_gh_env is true"
-            exit 1
-          fi
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-          token: ${{ secrets.GH_TOKEN }}
-
-      - name: Create git tag and GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          VERSION: ${{ needs.version.outputs.version }}
-          GIT_AUTHOR_NAME: github-actions[bot]
-          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-          GIT_COMMITTER_NAME: github-actions[bot]
-          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-        run: |
-          set -euo pipefail
-
-          if [[ -z "$VERSION" ]]; then
-            echo "::error::Empty version; cannot create tag."
-            exit 1
-          fi
-
-          TAG="$VERSION"
-
-          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
-            echo "::notice::Tag $TAG already exists on origin; skipping git tag."
-          elif git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
-            git push origin "$TAG"
-            echo "::notice::Pushed existing local tag $TAG"
-          else
-            git tag -a "$TAG" -m "chore(release): $TAG"
-            git push origin "$TAG"
-            echo "::notice::Pushed git tag $TAG"
-          fi
-
-          PRERELEASE_FLAG=()
-          if [[ "$VERSION" == *-* ]]; then
-            PRERELEASE_FLAG=(--prerelease)
-          fi
-
-          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
-            echo "::notice::GitHub Release $TAG already exists; skipping."
-            exit 0
-          fi
-
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes "Release ${TAG}" \
-            "${PRERELEASE_FLAG[@]}" \
-            --repo "$GH_REPO"
-
-          echo "::notice::Created GitHub Release $TAG"

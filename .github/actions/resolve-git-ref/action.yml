@@ -75,27 +75,61 @@ runs:
           exit 0
         fi
 
-        # Auto-resolve: fetch all tags for the repository
+        # Auto-resolve: only semver tags whose commit is contained in target_branch.
         echo "::notice::Auto-resolving latest tag for branch '$TARGET_BRANCH' in $REPOSITORY"
 
-        ALL_TAGS=$(gh api "repos/$REPOSITORY/tags" --paginate --jq '.[].name' 2>/dev/null || true)
-
-        if [[ -z "$ALL_TAGS" ]]; then
+        if ! TAG_LINES=$(gh api --paginate "repos/${REPOSITORY}/tags" --jq '.[] | [.name, .commit.sha] | @tsv'); then
+          echo "::error::Failed to list tags in $REPOSITORY"
+          exit 1
+        fi
+        if [[ -z "$TAG_LINES" ]]; then
           echo "::error::No tags found in $REPOSITORY"
+          exit 1
+        fi
+
+        if ! gh api "repos/${REPOSITORY}/commits/${TARGET_BRANCH}" --jq .sha >/dev/null; then
+          echo "::error::Branch '$TARGET_BRANCH' was not found in $REPOSITORY"
+          exit 1
+        fi
+
+        STABLE_PAT='^v?[0-9]+\.[0-9]+\.[0-9]+$'
+        PRE_PAT='^v?[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$'
+        REACHABLE=""
+        COMPARE_ERR=$(mktemp)
+
+        while IFS=$'\t' read -r name sha; do
+          [[ -z "$name" || -z "$sha" ]] && continue
+          if [[ ! "$name" =~ $STABLE_PAT && ! "$name" =~ $PRE_PAT ]]; then
+            continue
+          fi
+          if ! STATUS=$(gh api "repos/${REPOSITORY}/compare/${sha}...${TARGET_BRANCH}" --jq '.status' 2>"$COMPARE_ERR"); then
+            if grep -q '406' "$COMPARE_ERR"; then
+              echo "::notice::Skipping tag $name; GitHub compare returned 406 (diff too large)."
+              continue
+            fi
+            echo "::error::Failed to compare tag $name with $TARGET_BRANCH"
+            cat "$COMPARE_ERR" >&2
+            exit 1
+          fi
+          if [[ "$STATUS" == "ahead" || "$STATUS" == "identical" ]]; then
+            REACHABLE+="${name}"$'\n'
+          fi
+        done <<< "$TAG_LINES"
+        rm -f "$COMPARE_ERR"
+
+        if [[ -z "$REACHABLE" ]]; then
+          echo "::error::No semver tags are reachable from '$TARGET_BRANCH' in $REPOSITORY"
           exit 1
         fi
 
         pick_latest() {
           local pattern="$1"
-          echo "$ALL_TAGS" | grep -E "$pattern" | awk '{
+          printf '%s' "$REACHABLE" | grep -E "$pattern" | awk '{
             n = $0
             sub(/^v/, "", n)
             print n "\t" $0
           }' | sort -t $'\t' -k1,1V | tail -1 | cut -f2-
         }
-
-        STABLE_PAT='^v?[0-9]+\.[0-9]+\.[0-9]+$'
-        PRE_PAT='^v?[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$'
 
         if [[ "$TARGET_BRANCH" == "main" || "$TARGET_BRANCH" == "production" || "$TARGET_BRANCH" == "prod" ]]; then
           RESOLVED=$(pick_latest "$STABLE_PAT" || true)
@@ -105,6 +139,7 @@ runs:
           if [[ -z "$RESOLVED" ]]; then
             RESOLVED=$(pick_latest "$STABLE_PAT" || true)
             STREAM="stable"
+            echo "::notice::No prerelease tag on '$TARGET_BRANCH'; falling back to the latest stable tag on that branch."
           else
             STREAM="beta"
           fi

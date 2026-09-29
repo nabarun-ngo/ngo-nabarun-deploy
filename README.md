@@ -14,7 +14,8 @@ Replace `YOUR_ORG/deploy-platform` in examples with this repository’s `owner/n
 |----------|------|-----|
 | [`reusable-ci-pr-check.yml`](.github/workflows/reusable-ci-pr-check.yml) | PR install, lint, type-check, build, optional tests | [docs/workflows/reusable-ci-pr-check.md](docs/workflows/reusable-ci-pr-check.md) |
 | [`reusable-ci-changeset-check.yml`](.github/workflows/reusable-ci-changeset-check.yml) | PR: require a Changeset when `packages/**` changes | [docs/workflows/reusable-ci-changeset-check.md](docs/workflows/reusable-ci-changeset-check.md) |
-| [`reusable-ci-publish.yml`](.github/workflows/reusable-ci-publish.yml) | Changesets version, optional npm, optional git tags/Releases | [docs/workflows/reusable-ci-publish.md](docs/workflows/reusable-ci-publish.md) |
+| [`reusable-ci-publish.yml`](.github/workflows/reusable-ci-publish.yml) | Changesets version and optional npm publish | [docs/workflows/reusable-ci-publish.md](docs/workflows/reusable-ci-publish.md) |
+| [`reusable-ci-tag-release.yml`](.github/workflows/reusable-ci-tag-release.yml) | App repos: bare semver git tag and GitHub Release | [docs/workflows/reusable-ci-tag-release.md](docs/workflows/reusable-ci-tag-release.md) |
 | [`reusable-setup-context.yml`](.github/workflows/reusable-setup-context.yml) | Normalize dispatch/schedule inputs for deploys | [docs/workflows/reusable-setup-context.md](docs/workflows/reusable-setup-context.md) |
 | [`reusable-deploy-gae-node.yml`](.github/workflows/reusable-deploy-gae-node.yml) | Build, migrate, deploy Node.js to App Engine | [docs/workflows/reusable-deploy-gae-node.md](docs/workflows/reusable-deploy-gae-node.md) |
 | [`reusable-deploy-firebase-node.yml`](.github/workflows/reusable-deploy-firebase-node.yml) | Build and deploy Node.js to Firebase Hosting | [docs/workflows/reusable-deploy-firebase-node.md](docs/workflows/reusable-deploy-firebase-node.md) |

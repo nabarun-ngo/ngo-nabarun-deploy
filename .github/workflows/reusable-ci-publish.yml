@@ -339,7 +339,7 @@ jobs:
 
       - name: Version Packages pull request
         if: ${{ steps.pending.outputs.count != '0' }}
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
           cwd: ${{ inputs.working_directory }}
           version: ${{ inputs.version_command }}

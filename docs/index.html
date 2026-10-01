@@ -219,13 +219,13 @@
 
     <div class="card">
       <h3>🚀 Deploy Backend</h3>
-      <p>Trigger a manual backend deploy via <code>ops-deploy-backend.yml</code> workflow.</p>
+      <p>Deploy the backend to App Engine, from the Actions tab or a Trigger-Deploy-Backend dispatch. Stage and production both wait for approval.</p>
       <a href="../../actions/workflows/ops-deploy-backend.yml" class="btn">Run Workflow →</a>
     </div>
 
     <div class="card">
       <h3>🌐 Deploy Frontend</h3>
-      <p>Trigger a frontend deploy via <code>ops-deploy-frontend.yml</code> workflow.</p>
+      <p>Manually deploy a frontend app to Firebase. Stage and production wait for approval; the public site also deploys to stage automatically twice monthly.</p>
       <a href="../../actions/workflows/ops-deploy-frontend.yml" class="btn">Run Workflow →</a>
     </div>
 
@@ -261,8 +261,8 @@
     <tbody>
       <tr>
         <td><code>stage</code></td>
-        <td>Manual/dispatch deploy or tests to stage</td>
-        <td><span class="badge badge-blue">Optional</span></td>
+        <td>Manual deploy or tests to stage</td>
+        <td><span class="badge badge-orange">Required</span></td>
         <td>GCP_*, FB_*, DOPPLER_*</td>
       </tr>
       <tr>
@@ -279,7 +279,7 @@
       </tr>
       <tr>
         <td><code>stage-scheduled</code></td>
-        <td>Bi-weekly public site deploy (cron)</td>
+        <td>Biweekly public-site stage deploy</td>
         <td><span class="badge badge-green">Auto</span></td>
         <td>FB_*, DOPPLER_*</td>
       </tr>
@@ -294,7 +294,8 @@
     </thead>
     <tbody>
       <tr><td><code>backend</code></td><td>GAE (App Engine)</td><td>stage, prod</td></tr>
-      <tr><td><code>frontend</code></td><td>Firebase Hosting</td><td>stage, prod</td></tr>
+      <tr><td><code>fe-internal-app</code></td><td>Firebase Hosting</td><td>stage, prod</td></tr>
+      <tr><td><code>fe-public-site</code></td><td>Firebase Hosting</td><td>stage, prod</td></tr>
     </tbody>
   </table>
 

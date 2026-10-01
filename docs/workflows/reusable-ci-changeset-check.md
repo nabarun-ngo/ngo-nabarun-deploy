@@ -46,9 +46,14 @@ jobs:
   changeset-check:
     uses: YOUR_ORG/deploy-platform/.github/workflows/reusable-ci-changeset-check.yml@main
     with:
+      templates_repository: YOUR_ORG/deploy-platform
       node_version: '22'
       working_directory: '.'
       packages_filter: 'packages/**'
       # use_gh_env: true
       # gh_env: prod
+    secrets:
+      TEMPLATES_TOKEN: ${{ secrets.TEMPLATES_TOKEN }}
 ```
+
+`templates_repository` is required. `TEMPLATES_TOKEN` needs read access to that repository. `GITHUB_TOKEN` cannot read another repository.

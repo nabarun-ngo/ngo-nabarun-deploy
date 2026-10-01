@@ -4,11 +4,11 @@ Source: [`.github/workflows/ops-run-tests.yml`](../../.github/workflows/ops-run-
 
 Thin caller for [reusable-run-tests-allure](reusable-run-tests-allure.md).
 
-Triggers: `workflow_dispatch` and nightly/weekly schedules (`0 3 * * *` smoke, `0 2 * * 1` regression). There is no `repository_dispatch` and no post-deploy hook from [ops-deploy-frontend](ops-deploy-frontend.md).
+Triggers: `workflow_dispatch` and nightly/weekly schedules (`0 3 * * *` smoke, `0 2 * * 1` regression). There is no `repository_dispatch` and no hook from [ops-deploy-frontend](ops-deploy-frontend.md).
 
 | Trigger | Target | GitHub Environment | Approval |
 |---------|--------|-------------------|----------|
-| Manual | stage | `stage` | Optional |
+| Manual | stage | `stage` | Required |
 | Manual | prod | `prod` | Required (parallelism forced to 1) |
 | Cron | `profile.environment` in `tests.json` (stage today) | `tests-scheduled` | Auto |
 

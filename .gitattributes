@@ -1,0 +1,16 @@
+* text=auto eol=lf
+
+# Scripts that run on Linux runners must never acquire CRLF.
+*.sh      text eol=lf
+*.py      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.tpl     text eol=lf
+*.json    text eol=lf
+*.md      text eol=lf
+*.html    text eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

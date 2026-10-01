@@ -2,7 +2,7 @@
 
 Source: [`.github/workflows/reusable-ci-release-event.yml`](../../.github/workflows/reusable-ci-release-event.yml)
 
-Publishes one release fact from an application repository to this repository. It reports that a release exists. It does not name a manifest, choose an environment, or request a deploy. [ops-on-release](ops-on-release.md) applies the policy.
+Publishes one release fact from an application repository to this repository. It reports that a release exists. It does not deploy. Operators run [ops-deploy-backend](ops-deploy-backend.md) or [ops-deploy-frontend](ops-deploy-frontend.md).
 
 Use this instead of hand-writing `gh api ... /dispatches` in each application repository, so the payload contract lives in one place.
 
@@ -33,16 +33,18 @@ The job fails when `tag_name` is not bare semver or when `prerelease` disagrees 
 
 ## How the client consumes it
 
-Chain it after [reusable-ci-tag-release](reusable-ci-tag-release.md) and publish only when a tag was actually created:
+Chain it after [reusable-ci-tag-release](reusable-ci-tag-release.md) and publish only when a tag was actually created. The event does not deploy anything:
 
 ```yaml
 jobs:
   tag_release:
     uses: YOUR_ORG/deploy-platform/.github/workflows/reusable-ci-tag-release.yml@main
     with:
+      templates_repository: YOUR_ORG/deploy-platform
       version_file: package.json
     secrets:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TEMPLATES_TOKEN: ${{ secrets.TEMPLATES_TOKEN }}
 
   publish_release_event:
     needs: tag_release

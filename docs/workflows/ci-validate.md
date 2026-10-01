@@ -2,7 +2,7 @@
 
 Source: [`.github/workflows/ci-validate.yml`](../../.github/workflows/ci-validate.yml)
 
-CI **for this repository**. Validates manifests (`schemas/manifest.v1.schema.json`) and schedule files (`config/schedules/*.json` against `schemas/schedules.v1.schema.json`), lints workflow YAML (actionlint when available), and shellchecks `scripts/`.
+CI **for this repository**. Validates manifests (`schemas/manifest.v1.schema.json`) and schedule files (`config/schedules/*.json` against `schemas/schedules.v1.schema.json`), lints workflow YAML (actionlint when available), and shellchecks every `*.sh` under `scripts/` and `.github/actions/`.
 
 ## Who calls it
 

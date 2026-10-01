@@ -2,12 +2,27 @@
 
 Source: [`.github/workflows/ops-deploy-frontend.yml`](../../.github/workflows/ops-deploy-frontend.yml)
 
-Thin caller for Firebase Hosting via [reusable-deploy-firebase-node](reusable-deploy-firebase-node.md).
+Deploy one frontend manifest to Firebase Hosting through [reusable-deploy-firebase-node](reusable-deploy-firebase-node.md).
 
-Triggers: `workflow_dispatch`, schedule `0 2 1,15 * *` (public site to `stage-scheduled`), optional dispatch.
+Triggers:
+
+- `workflow_dispatch`: operator chooses `fe-internal-app` or `fe-public-site`, the environment, and the tag.
+- `0 2 1,15 * *`: automatic public-site deployment to `stage-scheduled` using `latest`.
+
+An application release does not start this workflow.
+
+| Target | GitHub Environment | Approval |
+|--------|-------------------|----------|
+| Manual `stage` | `stage` | Required |
+| `prod` | `prod` | Required |
+| Scheduled public-site stage | `stage-scheduled` | Automatic |
+
+`stage` must have at least one required reviewer in GitHub. The scheduled run uses `stage-scheduled`, which stays auto-approved.
 
 ## How operators consume it
 
-**Actions → Ops — Deploy Frontend (Firebase) → Run workflow**. Choose manifest, `stage`/`prod`, and tag (`latest` allowed).
+**Actions → Ops — Deploy Frontend (Firebase) → Run workflow**
 
-Scheduled runs hard-route to the public-site manifest and stage. They do not deploy prod. They do not start [ops-run-tests](ops-run-tests.md); run tests from the Actions tab (or wait for the nightly/weekly crons).
+- `manifest_name`: `fe-internal-app` or `fe-public-site`
+- `target_environment`: `stage` or `prod`
+- `tag_name`: empty or `latest` to auto-resolve (see [platform](../platform.md))

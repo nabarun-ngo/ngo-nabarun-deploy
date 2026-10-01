@@ -64,15 +64,19 @@ jobs:
   tag_release:
     uses: YOUR_ORG/deploy-platform/.github/workflows/reusable-ci-tag-release.yml@main
     with:
+      templates_repository: YOUR_ORG/deploy-platform
       version_file: package.json
       stable_branch: main
       prerelease_branch: develop
       prerelease_tag: beta
     secrets:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TEMPLATES_TOKEN: ${{ secrets.TEMPLATES_TOKEN }}
 ```
 
-When `created` is `true`, chain [reusable-ci-release-event](reusable-ci-release-event.md) to publish a `Release-Created` fact to this repository. That fact does not name a manifest or an environment; [ops-on-release](ops-on-release.md) decides whether it becomes a deployment.
+`templates_repository` is required. `TEMPLATES_TOKEN` needs read access to that repository. `GITHUB_TOKEN` can still push the tag to the consumer repository, and it cannot read the templates repository.
+
+A created tag does not deploy. Operators run [ops-deploy-backend](ops-deploy-backend.md) or [ops-deploy-frontend](ops-deploy-frontend.md).
 
 To let an operator tag an exact version by hand, add a dispatch input and forward it. An empty box keeps the computed behavior:
 
@@ -89,7 +93,9 @@ jobs:
   tag_release:
     uses: YOUR_ORG/deploy-platform/.github/workflows/reusable-ci-tag-release.yml@main
     with:
+      templates_repository: YOUR_ORG/deploy-platform
       version: ${{ inputs.version }}
     secrets:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TEMPLATES_TOKEN: ${{ secrets.TEMPLATES_TOKEN }}
 ```

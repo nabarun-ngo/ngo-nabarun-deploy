@@ -63,64 +63,7 @@ jobs:
           INPUT_TAGS: ${{ github.event_name == 'workflow_dispatch' && inputs.test_tags || '' }}
           INPUT_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || '' }}
           INPUT_PARALLELISM: ${{ github.event_name == 'workflow_dispatch' && inputs.parallelism || '3' }}
-        run: |
-          set -euo pipefail
-
-          TEST_TAGS="@smoke"
-          TARGET_ENV="stage"
-          PARALLELISM=3
-          TIMEOUT=60
-          REPORT_TITLE="Smoke Tests"
-
-          case "$EVENT_NAME" in
-            schedule)
-              if [[ "$CRON_SCHEDULE" == "0 3 * * *" ]]; then
-                PROFILE=$(jq -c '.schedules[] | select(.id == "nightly-smoke")' config/schedules/tests.json)
-                TEST_TAGS=$(echo "$PROFILE" | jq -r '.profile.tags')
-                TARGET_ENV=$(echo "$PROFILE" | jq -r '.profile.environment')
-                PARALLELISM=$(echo "$PROFILE" | jq -r '.profile.parallelism')
-                TIMEOUT=$(echo "$PROFILE" | jq -r '.profile.timeoutMinutes')
-                REPORT_TITLE="Nightly Smoke — $(date -u +%Y-%m-%d)"
-              elif [[ "$CRON_SCHEDULE" == "0 2 * * 1" ]]; then
-                PROFILE=$(jq -c '.schedules[] | select(.id == "weekly-regression")' config/schedules/tests.json)
-                TEST_TAGS=$(echo "$PROFILE" | jq -r '.profile.tags')
-                TARGET_ENV=$(echo "$PROFILE" | jq -r '.profile.environment')
-                PARALLELISM=$(echo "$PROFILE" | jq -r '.profile.parallelism')
-                TIMEOUT=$(echo "$PROFILE" | jq -r '.profile.timeoutMinutes')
-                REPORT_TITLE="Weekly Regression — $(date -u +%Y-%m-%d)"
-              fi
-              ;;
-            workflow_dispatch)
-              TEST_TAGS="$INPUT_TAGS"
-              TARGET_ENV="$INPUT_ENV"
-              PARALLELISM="$INPUT_PARALLELISM"
-              REPORT_TITLE="Manual — ${TEST_TAGS} (${TARGET_ENV})"
-              ;;
-            *)
-              echo "::error::Unsupported event: $EVENT_NAME"
-              exit 1
-              ;;
-          esac
-
-          case "$TARGET_ENV" in
-            stage) DOPPLER_CONFIG="stg" ;;
-            prod) DOPPLER_CONFIG="prd" ;;
-            *)
-              echo "::error::Unknown target_environment: $TARGET_ENV"
-              exit 1
-              ;;
-          esac
-
-          {
-            echo "test_tags=$TEST_TAGS"
-            echo "target_environment=$TARGET_ENV"
-            echo "parallelism=$PARALLELISM"
-            echo "timeout_minutes=$TIMEOUT"
-            echo "doppler_config=$DOPPLER_CONFIG"
-            echo "report_title<<EOF"
-            echo "$REPORT_TITLE"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+        run: bash scripts/resolve-test-profile.sh
 
       - name: Resolve GitHub Environment
         id: route
@@ -140,32 +83,7 @@ jobs:
           DOPPLER_CONFIG: ${{ steps.resolve.outputs.doppler_config }}
           REPORT_TITLE: ${{ steps.resolve.outputs.report_title }}
           GH_ENV: ${{ steps.route.outputs.gh_env }}
-        run: |
-          set -euo pipefail
-          if [[ "$GH_ENV" == "prod" ]]; then
-            PARALLELISM=1
-            echo "::notice::Pinning parallelism to 1 for prod (one approval per run)"
-          fi
-          {
-            echo "test_tags=$TEST_TAGS"
-            echo "target_environment=$TARGET_ENV"
-            echo "parallelism=$PARALLELISM"
-            echo "timeout_minutes=$TIMEOUT"
-            echo "doppler_config=$DOPPLER_CONFIG"
-            echo "report_title<<EOF"
-            echo "$REPORT_TITLE"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "::group::Resolved test profile"
-          echo "test_tags=$TEST_TAGS"
-          echo "target_environment=$TARGET_ENV"
-          echo "parallelism=$PARALLELISM"
-          echo "timeout_minutes=$TIMEOUT"
-          echo "gh_env=$GH_ENV"
-          echo "doppler_config=$DOPPLER_CONFIG"
-          echo "report_title=$REPORT_TITLE"
-          echo "::endgroup::"
-          echo "::notice::Test profile — tags=$TEST_TAGS env=$TARGET_ENV gh_env=$GH_ENV shards=$PARALLELISM doppler=$DOPPLER_CONFIG"
+        run: bash scripts/finalize-test-profile.sh
 
   tests:
     name: Run tests

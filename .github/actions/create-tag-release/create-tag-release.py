@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create one application git tag and GitHub Release.
 
-The calling workflow materializes release_model.py on PYTHONPATH and checks out
+The calling workflow stages release_model.py on PYTHONPATH and checks out
 the application repository before running this script.
 """
 

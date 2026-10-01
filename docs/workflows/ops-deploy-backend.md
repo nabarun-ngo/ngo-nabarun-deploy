@@ -2,24 +2,28 @@
 
 Source: [`.github/workflows/ops-deploy-backend.yml`](../../.github/workflows/ops-deploy-backend.yml)
 
-Thin caller: setup context → resolve manifest → [reusable-deploy-gae-node](reusable-deploy-gae-node.md).
+Deploy the backend manifest to App Engine through [reusable-deploy-gae-node](reusable-deploy-gae-node.md).
 
-Triggers: `workflow_dispatch`, `repository_dispatch` type `Trigger-Deploy-Backend`.
+Triggers: `workflow_dispatch`, and `repository_dispatch` type `Trigger-Deploy-Backend`. An application release does not start this workflow.
 
-- `stage` → GitHub Environment `stage`
-- `prod` → `prod` (reviewers, `main` only)
+| Target | GitHub Environment | Approval |
+|--------|-------------------|----------|
+| `stage` | `stage` | Required |
+| `prod` | `prod` | Required |
 
-`Trigger-Deploy-Backend` is an explicit deploy request. It names the manifest, environment, and tag. A release fact is a different event: [ops-on-release](ops-on-release.md) listens for `Release-Created` and decides whether anything is deployed. Application repositories publish that fact and do not choose the environment.
+`stage` must have at least one required reviewer in GitHub. The workflow binds the job to that environment; it cannot create the reviewer rule. `Trigger-Deploy-Backend` uses the same environments, so a dispatched stage or prod run also waits.
+
+`Trigger-Deploy-Backend` is an explicit deploy request. The payload names the manifest, environment, and tag.
 
 ## How operators consume it
 
 **Actions → Ops — Deploy Backend (GAE) → Run workflow**
 
-- `manifest_name`: e.g. `backend`
+- `manifest_name`: `backend`
 - `target_environment`: `stage` or `prod`
 - `tag_name`: empty or `latest` to auto-resolve (see [platform](../platform.md))
 
-An operator, or another workflow in this repository, may request a deploy directly:
+An operator, or another workflow, may request the same deploy:
 
 ```bash
 gh api --method POST -H "Accept: application/vnd.github+json" \
@@ -29,5 +33,3 @@ gh api --method POST -H "Accept: application/vnd.github+json" \
   -f 'client_payload[manifest_name]=backend' \
   -f 'client_payload[target_environment]=stage'
 ```
-
-Do not auto-dispatch prod. A stable release published by an application stays manual: run this workflow for production.

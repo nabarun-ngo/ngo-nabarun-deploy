@@ -2,8 +2,8 @@ name: Reusable — CI publish release event
 
 # workflow_call only. Application repos call this after reusable-ci-tag-release
 # reports created=true. It publishes one release fact to the platform repository
-# and nothing else: no manifest, no environment, no deploy instruction.
-# ops-on-release.yml in the platform repository decides what happens next.
+# and nothing else. Nothing in this repository deploys because of that event.
+# Operators run ops-deploy-backend.yml or ops-deploy-frontend.yml.
 
 on:
   workflow_call:

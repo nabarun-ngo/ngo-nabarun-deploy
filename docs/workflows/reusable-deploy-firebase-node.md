@@ -8,7 +8,7 @@ Build and deploy jobs bind to a GitHub Environment when `use_gh_env` is true (de
 
 ## Who calls it
 
-[ops-deploy-frontend](ops-deploy-frontend.md) in this repo. Application repos do not call this directly.
+[ops-deploy-frontend](ops-deploy-frontend.md). Application repos do not call this directly.
 
 ## Inputs (environment)
 
@@ -19,7 +19,7 @@ Build and deploy jobs bind to a GitHub Environment when `use_gh_env` is true (de
 
 ## How the client consumes it
 
-Operators run **Ops — Deploy Frontend (Firebase)** or rely on the bi-weekly schedule. Add a Firebase manifest and wire it in the ops caller. See [platform setup](../platform.md).
+Operators run **Ops — Deploy Frontend (Firebase)**, or wait for the biweekly public-site schedule. Add a Firebase manifest and extend that caller's choice list. See [platform setup](../platform.md).
 
 ```yaml
 jobs:

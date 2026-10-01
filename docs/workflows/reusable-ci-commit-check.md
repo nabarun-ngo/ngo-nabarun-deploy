@@ -27,4 +27,10 @@ permissions:
 jobs:
   commits:
     uses: YOUR_ORG/deploy-platform/.github/workflows/reusable-ci-commit-check.yml@main
+    with:
+      templates_repository: YOUR_ORG/deploy-platform
+    secrets:
+      TEMPLATES_TOKEN: ${{ secrets.TEMPLATES_TOKEN }}
 ```
+
+`templates_repository` is required. A called workflow runs in the consumer repository, so it cannot find `scripts/release_model.py` unless the consumer names the templates repository. `TEMPLATES_TOKEN` needs read access to that repository. `GITHUB_TOKEN` cannot read another repository.

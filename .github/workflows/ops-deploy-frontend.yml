@@ -1,17 +1,14 @@
 name: Ops — Deploy Frontend (Firebase)
 
-# Thin caller for deploying a Node.js frontend to Firebase Hosting.
-# Also handles the bi-weekly scheduled public site deploy.
-#
-# Schedule: '0 2 1,15 * *' — 1st and 15th of each month at 02:00 UTC.
-# On schedule: hard-routes to frontend manifest and stage environment.
-#
-# Access control:
-#   stage            → GitHub Environment 'stage'
-#   stage (schedule) → GitHub Environment 'stage-scheduled' (auto-approved)
-#   prod             → GitHub Environment 'prod' (required reviewers)
+# Manual deploy of one frontend manifest, plus the biweekly public-site stage deploy.
+# An application release does not start this workflow.
+# Manual stage and prod runs require reviewers; the schedule uses stage-scheduled.
 
 on:
+  schedule:
+    # 1st and 15th of each month at 02:00 UTC
+    - cron: '0 2 1,15 * *'
+
   workflow_dispatch:
     inputs:
       manifest_name:
@@ -19,10 +16,10 @@ on:
         required: true
         type: choice
         options:
-          - fe-public-site
           - fe-internal-app
+          - fe-public-site
       target_environment:
-        description: 'Deploy target'
+        description: 'Deploy target. Stage and prod both wait for environment approval.'
         required: true
         type: choice
         options:
@@ -33,48 +30,20 @@ on:
         required: false
         default: 'latest'
 
-  repository_dispatch:
-    types: [Trigger-Deploy-Frontend]
-
-  schedule:
-    # 1st and 15th of each month at 02:00 UTC
-    - cron: '0 2 1,15 * *'
-
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  # ──────────────────────────────────────────────────────────────────────────
-  # 1. Normalize inputs (schedule hard-routes to public site / stage)
-  # ──────────────────────────────────────────────────────────────────────────
   context:
     name: Setup context
     uses: ./.github/workflows/reusable-setup-context.yml
     with:
-      manifest_name: >-
-        ${{
-          github.event_name == 'schedule'        && 'fe-public-site' ||
-          github.event_name == 'workflow_dispatch' && inputs.manifest_name ||
-          github.event.client_payload.manifest_name
-        }}
-      target_environment: >-
-        ${{
-          github.event_name == 'schedule'          && 'stage' ||
-          github.event_name == 'workflow_dispatch'  && inputs.target_environment ||
-          github.event.client_payload.target_environment || 'stage'
-        }}
-      tag_name: >-
-        ${{
-          github.event_name == 'schedule'          && 'latest' ||
-          github.event_name == 'workflow_dispatch'  && inputs.tag_name ||
-          github.event.client_payload.tag_name || 'latest'
-        }}
+      manifest_name: ${{ github.event_name == 'schedule' && 'fe-public-site' || inputs.manifest_name }}
+      target_environment: ${{ github.event_name == 'schedule' && 'stage' || inputs.target_environment }}
+      tag_name: ${{ github.event_name == 'schedule' && 'latest' || inputs.tag_name }}
       workflow_type: deploy
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 2. Resolve manifest
-  # ──────────────────────────────────────────────────────────────────────────
   manifest:
     name: Resolve manifest
     needs: context
@@ -88,17 +57,18 @@ jobs:
       install_command: ${{ steps.resolve.outputs.install_command }}
       build_command: ${{ steps.resolve.outputs.build_command }}
       output_path: ${{ steps.resolve.outputs.output_path }}
+      platform: ${{ steps.resolve.outputs.platform }}
       config_template: ${{ steps.resolve.outputs.config_template }}
+      target_service: ${{ steps.resolve.outputs.target_service }}
       secrets_provider: ${{ steps.resolve.outputs.secrets_provider }}
       doppler_project: ${{ steps.resolve.outputs.doppler_project }}
       doppler_config: ${{ steps.resolve.outputs.doppler_config }}
-      target_service: ${{ steps.resolve.outputs.target_service }}
       source_ref: ${{ steps.resolve.outputs.source_ref }}
 
     steps:
       - name: Log run context
         run: |
-          echo "::notice::Resolve manifest ${{ needs.context.outputs.manifest_name }} env=${{ needs.context.outputs.target_environment }} trigger=${{ needs.context.outputs.trigger_type }}"
+          echo "::notice::Resolve manifest ${{ needs.context.outputs.manifest_name }} env=${{ needs.context.outputs.target_environment }}"
 
       - name: Checkout platform repo
         uses: actions/checkout@v7
@@ -110,9 +80,15 @@ jobs:
           manifest_name: ${{ needs.context.outputs.manifest_name }}
           target_environment: ${{ needs.context.outputs.target_environment }}
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 3. Resolve git ref
-  # ──────────────────────────────────────────────────────────────────────────
+      - name: Require Firebase
+        env:
+          PLATFORM: ${{ steps.resolve.outputs.platform }}
+        run: |
+          if [[ "$PLATFORM" != "firebase" ]]; then
+            echo "::error::Frontend manifest platform '$PLATFORM' is not firebase"
+            exit 1
+          fi
+
   resolve_ref:
     name: Resolve git ref
     needs: [context, manifest]
@@ -137,9 +113,6 @@ jobs:
           repository: ${{ needs.manifest.outputs.repository }}
           github_token: ${{ secrets.PAT }}
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 4. Resolve GitHub Environment
-  # ──────────────────────────────────────────────────────────────────────────
   resolve_env:
     name: Resolve GitHub Environment
     needs: context
@@ -150,7 +123,7 @@ jobs:
     steps:
       - name: Log run context
         run: |
-          echo "::notice::Resolve GitHub Environment trigger=${{ needs.context.outputs.trigger_type }} target=${{ needs.context.outputs.target_environment }}"
+          echo "::notice::Resolve GitHub Environment target=${{ needs.context.outputs.target_environment }}"
 
       - name: Checkout platform repo
         uses: actions/checkout@v7
@@ -159,15 +132,12 @@ jobs:
         id: resolve
         uses: ./.github/actions/resolve-deployment-environment
         with:
-          trigger_type: ${{ needs.context.outputs.trigger_type }}
+          trigger_type: ${{ github.event_name }}
           target_environment: ${{ needs.context.outputs.target_environment }}
           workflow_type: deploy
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 5. Deploy Firebase
-  # ──────────────────────────────────────────────────────────────────────────
   deploy:
-    name: Deploy
+    name: Deploy Firebase
     needs: [manifest, resolve_ref, resolve_env, context]
     uses: ./.github/workflows/reusable-deploy-firebase-node.yml
     with:
@@ -188,7 +158,4 @@ jobs:
       use_gh_env: true
       gh_env: ${{ needs.resolve_env.outputs.gh_env }}
       target_environment: ${{ needs.context.outputs.target_environment }}
-    # The called workflow resolves stage/prod credentials from the GitHub
-    # Environment bound to its jobs. Named mappings here would evaluate secrets
-    # before that environment is selected.
     secrets: inherit

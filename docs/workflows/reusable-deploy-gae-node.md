@@ -8,7 +8,7 @@ Migrate and deploy jobs bind to a GitHub Environment when `use_gh_env` is true (
 
 ## Who calls it
 
-[ops-deploy-backend](ops-deploy-backend.md) and, for an accepted prerelease, [ops-on-release](ops-on-release.md). Application repos do not call this directly.
+[ops-deploy-backend](ops-deploy-backend.md). Application repos do not call this directly.
 
 ## Inputs (environment)
 
@@ -21,7 +21,7 @@ Logical target (`stage` / `prod`) remains `target_environment`.
 
 ## How the client consumes it
 
-Do not `uses:` this from an app repo. Operators run **Ops — Deploy Backend (GAE)** or send `repository_dispatch` type `Trigger-Deploy-Backend`. That caller resolves the manifest and invokes this reusable:
+Do not `uses:` this from an app repo. Operators run **Ops — Deploy Backend (GAE)**, or send `repository_dispatch` type `Trigger-Deploy-Backend`. That caller resolves the manifest and invokes this reusable:
 
 ```yaml
 jobs:

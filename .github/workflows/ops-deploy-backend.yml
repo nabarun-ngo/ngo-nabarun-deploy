@@ -1,24 +1,21 @@
 name: Ops — Deploy Backend (GAE)
 
-# Thin caller workflow for deploying a Node.js backend to Google App Engine.
-# Triggered manually, via repository_dispatch from an app repo CD pipeline,
-# or (never auto-dispatched to prod — prod always requires a deliberate manual run).
-#
-# Access control:
-#   stage → GitHub Environment 'stage'         (optional reviewers)
-#   prod  → GitHub Environment 'prod'          (required reviewers, main branch only)
+# Deploy the backend manifest to App Engine.
+# Triggered manually, or by repository_dispatch type Trigger-Deploy-Backend.
+# An application release does not start this workflow.
+# Stage and prod both bind to GitHub Environments that require reviewers.
 
 on:
   workflow_dispatch:
     inputs:
       manifest_name:
-        description: 'Application manifest (e.g. backend)'
+        description: 'Backend manifest'
         required: true
         type: choice
         options:
           - backend
       target_environment:
-        description: 'Deploy target'
+        description: 'Deploy target. Stage and prod both wait for environment approval.'
         required: true
         type: choice
         options:
@@ -37,9 +34,6 @@ permissions:
   id-token: write
 
 jobs:
-  # ──────────────────────────────────────────────────────────────────────────
-  # 1. Normalize inputs across trigger types
-  # ──────────────────────────────────────────────────────────────────────────
   context:
     name: Setup context
     uses: ./.github/workflows/reusable-setup-context.yml
@@ -49,9 +43,6 @@ jobs:
       tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.event.client_payload.tag_name || 'latest' }}
       workflow_type: deploy
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 2. Resolve manifest fields
-  # ──────────────────────────────────────────────────────────────────────────
   manifest:
     name: Resolve manifest
     needs: context
@@ -66,6 +57,7 @@ jobs:
       build_command: ${{ steps.resolve.outputs.build_command }}
       output_path: ${{ steps.resolve.outputs.output_path }}
       bundle_includes: ${{ steps.resolve.outputs.bundle_includes }}
+      platform: ${{ steps.resolve.outputs.platform }}
       config_template: ${{ steps.resolve.outputs.config_template }}
       gae_service: ${{ steps.resolve.outputs.gae_service }}
       db_migrate: ${{ steps.resolve.outputs.db_migrate }}
@@ -81,7 +73,7 @@ jobs:
     steps:
       - name: Log run context
         run: |
-          echo "::notice::Resolve manifest ${{ needs.context.outputs.manifest_name }} env=${{ needs.context.outputs.target_environment }} trigger=${{ needs.context.outputs.trigger_type }}"
+          echo "::notice::Resolve manifest ${{ needs.context.outputs.manifest_name }} env=${{ needs.context.outputs.target_environment }}"
 
       - name: Checkout platform repo
         uses: actions/checkout@v7
@@ -93,9 +85,15 @@ jobs:
           manifest_name: ${{ needs.context.outputs.manifest_name }}
           target_environment: ${{ needs.context.outputs.target_environment }}
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 3. Resolve git ref (auto or explicit)
-  # ──────────────────────────────────────────────────────────────────────────
+      - name: Require App Engine
+        env:
+          PLATFORM: ${{ steps.resolve.outputs.platform }}
+        run: |
+          if [[ "$PLATFORM" != "gae" ]]; then
+            echo "::error::Backend manifest platform '$PLATFORM' is not gae"
+            exit 1
+          fi
+
   resolve_ref:
     name: Resolve git ref
     needs: [context, manifest]
@@ -120,9 +118,6 @@ jobs:
           repository: ${{ needs.manifest.outputs.repository }}
           github_token: ${{ secrets.PAT }}
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 4. Resolve GitHub Environment (trigger-aware)
-  # ──────────────────────────────────────────────────────────────────────────
   resolve_env:
     name: Resolve GitHub Environment
     needs: context
@@ -133,7 +128,7 @@ jobs:
     steps:
       - name: Log run context
         run: |
-          echo "::notice::Resolve GitHub Environment trigger=${{ needs.context.outputs.trigger_type }} target=${{ needs.context.outputs.target_environment }}"
+          echo "::notice::Resolve GitHub Environment target=${{ needs.context.outputs.target_environment }}"
 
       - name: Checkout platform repo
         uses: actions/checkout@v7
@@ -146,11 +141,8 @@ jobs:
           target_environment: ${{ needs.context.outputs.target_environment }}
           workflow_type: deploy
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # 5. Deploy (calls reusable GAE engine)
-  # ──────────────────────────────────────────────────────────────────────────
   deploy:
-    name: Deploy
+    name: Deploy App Engine
     needs: [manifest, resolve_ref, resolve_env, context]
     uses: ./.github/workflows/reusable-deploy-gae-node.yml
     with:
@@ -177,7 +169,4 @@ jobs:
       use_gh_env: true
       gh_env: ${{ needs.resolve_env.outputs.gh_env }}
       target_environment: ${{ needs.context.outputs.target_environment }}
-    # The called workflow resolves stage/prod credentials from the GitHub
-    # Environment bound to its jobs. Named mappings here would evaluate secrets
-    # before that environment is selected.
     secrets: inherit

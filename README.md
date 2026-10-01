@@ -28,9 +28,8 @@ Replace `YOUR_ORG/deploy-platform` in examples with this repository’s `owner/n
 | Workflow | Role | Doc |
 |----------|------|-----|
 | [`ci-validate.yml`](.github/workflows/ci-validate.yml) | Manifest, workflow, and shell lint on this repo | [docs/workflows/ci-validate.md](docs/workflows/ci-validate.md) |
-| [`ops-deploy-backend.yml`](.github/workflows/ops-deploy-backend.yml) | Manual/dispatch deploy to App Engine | [docs/workflows/ops-deploy-backend.md](docs/workflows/ops-deploy-backend.md) |
-| [`ops-on-release.yml`](.github/workflows/ops-on-release.yml) | Decide whether a published release is deployed | [docs/workflows/ops-on-release.md](docs/workflows/ops-on-release.md) |
-| [`ops-deploy-frontend.yml`](.github/workflows/ops-deploy-frontend.yml) | Manual/schedule deploy to Firebase Hosting | [docs/workflows/ops-deploy-frontend.md](docs/workflows/ops-deploy-frontend.md) |
+| [`ops-deploy-backend.yml`](.github/workflows/ops-deploy-backend.yml) | App Engine deploy (`workflow_dispatch` or `Trigger-Deploy-Backend`) | [docs/workflows/ops-deploy-backend.md](docs/workflows/ops-deploy-backend.md) |
+| [`ops-deploy-frontend.yml`](.github/workflows/ops-deploy-frontend.yml) | Manual Firebase deploy; scheduled public-site stage deploy | [docs/workflows/ops-deploy-frontend.md](docs/workflows/ops-deploy-frontend.md) |
 | [`ops-run-tests.yml`](.github/workflows/ops-run-tests.yml) | Manual/schedule tests | [docs/workflows/ops-run-tests.md](docs/workflows/ops-run-tests.md) |
 | [`ops-publish-site.yml`](.github/workflows/ops-publish-site.yml) | Publish the docs portal to `gh-pages` | [docs/workflows/ops-publish-site.md](docs/workflows/ops-publish-site.md) |
 | [`ops-gcp-ops.yml`](.github/workflows/ops-gcp-ops.yml) | Interactive GCP operations hub | [docs/workflows/ops-gcp-ops.md](docs/workflows/ops-gcp-ops.md) |
@@ -96,6 +95,25 @@ browsers. The explicit `no-cache` entries that follow are belt-and-braces, so
 the headers are correct whichever way Firebase resolves overlapping rules.
 
 Add a filename here when an app starts shipping another unhashed worker script.
+
+## Where step bodies live
+
+Workflow steps longer than a few lines live in script files, not in `run:` blocks,
+so they can be shellchecked and read on their own.
+
+| Location | Used by | Notes |
+|----------|---------|-------|
+| [`scripts/`](scripts/) | `ci-validate.yml` and the `ops-*` workflows | Run as `bash scripts/<name>.sh`. The job must check this repository out first. |
+| `.github/actions/<action>/*.sh` | That composite action only | Invoked as `bash "$GITHUB_ACTION_PATH/<name>.sh"`, so it resolves wherever the action is used. |
+
+The release workflows (`reusable-ci-publish`, `reusable-ci-tag-release`,
+`reusable-ci-changeset-check`, `reusable-ci-commit-check`) run in the consumer
+repository, so they cannot see this repo on their own. Each takes a required
+`templates_repository` input (`owner/name`). The job checks that repo out at
+`ext_repo`, copies [`scripts/release_model.py`](scripts/release_model.py) onto
+`PYTHONPATH`, then deletes the checkout so it is not scanned with the consumer's
+packages. `TEMPLATES_TOKEN` must be able to read `templates_repository`.
+`GITHUB_TOKEN` cannot.
 
 ## Composite actions
 

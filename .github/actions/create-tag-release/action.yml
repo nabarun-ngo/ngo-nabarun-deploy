@@ -2,7 +2,8 @@ name: Create tag and GitHub Release
 description: >
   Plan a bare semver tag from conventional commits, update package.json and
   CHANGELOG.md, push the tag, and create the GitHub Release.
-  Requires release_model.py on PYTHONPATH from the calling workflow.
+  Requires release_model.py on PYTHONPATH. The calling workflow checks out
+  templates_repository and stages scripts/release_model.py there.
 
 inputs:
   version:

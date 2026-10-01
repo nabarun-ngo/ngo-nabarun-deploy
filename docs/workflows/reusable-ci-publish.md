@@ -67,6 +67,7 @@ jobs:
   publish:
     uses: YOUR_ORG/deploy-platform/.github/workflows/reusable-ci-publish.yml@main
     with:
+      templates_repository: YOUR_ORG/deploy-platform
       node_version: '22'
       working_directory: '.'
       npm_scope: '@web-toolkit'
@@ -82,7 +83,10 @@ jobs:
     secrets:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      TEMPLATES_TOKEN: ${{ secrets.TEMPLATES_TOKEN }}
 ```
+
+`templates_repository` is required. `TEMPLATES_TOKEN` needs read access to that repository. `GH_TOKEN` stays the token that pushes to the consumer repository.
 
 `RELEASE_TOKEN` is a GitHub App token or a fine-grained PAT with `contents: write` and `pull-requests: write`. Do not pass `secrets.GITHUB_TOKEN`. A pull request opened with that token does not start the repository's pull request checks.
 

@@ -6,7 +6,7 @@ Normalizes `workflow_dispatch`, `repository_dispatch`, and `schedule` into a sin
 
 ## Who calls it
 
-Ops deploy workflows in **this** repo ([ops-deploy-backend](ops-deploy-backend.md), [ops-deploy-frontend](ops-deploy-frontend.md)). App repos do not call this.
+[ops-deploy-backend](ops-deploy-backend.md) and [ops-deploy-frontend](ops-deploy-frontend.md) in **this** repo. App repos do not call this.
 
 ## Inputs
 

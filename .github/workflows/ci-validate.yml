@@ -49,7 +49,6 @@ jobs:
         run: |
           python3 scripts/test_workflow_guardrails.py
           python3 scripts/test_release_model.py
-          python3 scripts/test_release_model_embed.py
           python3 scripts/validate-workflow-guardrails.py
 
       - name: Install jq and check-jsonschema

@@ -77,7 +77,7 @@ def main() -> int:
                 )
 
         manifest_sections = re.finditer(
-            r"^\s{6}manifest_name:\s*>-\s*$.*?(?=^\s{6}[A-Za-z_][A-Za-z0-9_]*:)",
+            r"^\s{6}manifest_name:\s*(?:>-\s*$.*?(?=^\s{6}[A-Za-z_][A-Za-z0-9_]*:)|\S.*$)",
             text,
             re.MULTILINE | re.DOTALL,
         )
@@ -101,6 +101,7 @@ def main() -> int:
     source_files = [
         *workflow_files,
         *sorted((ROOT / ".github" / "actions").glob("**/*.yml")),
+        *sorted((ROOT / ".github" / "actions").glob("**/*.sh")),
         *sorted((ROOT / "scripts").glob("*.sh")),
     ]
     for path in source_files:

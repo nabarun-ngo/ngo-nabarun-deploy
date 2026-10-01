@@ -6,10 +6,10 @@ One-time configuration for this ops repository. Workflow-specific usage is in [.
 
 | Environment name | Required reviewers | Branch restriction | Notes |
 |-----------------|-------------------|--------------------|-------|
-| `stage` | 0 (optional — `deployers` team) | none | Manual/dispatch deploys and tests to stage |
+| `stage` | 1+ (`deployers`) | none | Manual deploys and tests to stage. Both wait for reviewers. |
 | `prod` | 1+ (`release-managers`) | `main` only | Manual prod deploys and prod-targeted tests |
 | `tests-scheduled` | 0 | none | Auto-approved cron test runs |
-| `stage-scheduled` | 0 | none | Auto-approved bi-weekly public site deploy |
+| `stage-scheduled` | 0 | none | Auto-approved biweekly public-site deploy |
 
 Duplicate the same secrets into `stage` and `stage-scheduled`, and into `prod` where needed. Scheduled jobs use `*-scheduled` environments so they do not share protection with manual deploys.
 
@@ -136,10 +136,10 @@ Tags that exist only on another branch are ignored.
 |----------|------|----------|
 | Nightly smoke | `0 3 * * *` | [ops-run-tests](workflows/ops-run-tests.md) `@smoke` |
 | Weekly regression | `0 2 * * 1` | [ops-run-tests](workflows/ops-run-tests.md) `@regression` |
-| Bi-weekly public site | `0 2 1,15 * *` | [ops-deploy-frontend](workflows/ops-deploy-frontend.md) |
+| Biweekly public site | `0 2 1,15 * *` | [ops-deploy-frontend](workflows/ops-deploy-frontend.md) |
 | GCP cleanup | `0 17 * * 1,3,5` | [ops-gcp-cleanup](workflows/ops-gcp-cleanup.md) |
 
-Scheduled prod deploys are disabled. Production always requires a human.
+Backend deploys use [ops-deploy-backend](workflows/ops-deploy-backend.md): a manual run, or `repository_dispatch` type `Trigger-Deploy-Backend`. Frontend deploys use [ops-deploy-frontend](workflows/ops-deploy-frontend.md). Both `stage` and `prod` require a reviewer. The public-site schedule deploys to the separate auto-approved `stage-scheduled` environment.
 
 Cron test tags, SUT environment, shard count, and timeout come from [config/schedules/tests.json](../config/schedules/tests.json). GitHub Environment routing for tests uses [resolve-deployment-environment](../.github/actions/resolve-deployment-environment/action.yml) (`workflow_type: tests`): cron → `tests-scheduled`, manual stage → `stage`, manual prod → `prod` (one shard).
 
@@ -149,9 +149,9 @@ Reusable workflows bind jobs with `use_gh_env` / `gh_env` (CI defaults `use_gh_e
 
 | Trigger | Target | GitHub Environment | Approval |
 |---------|--------|-------------------|----------|
-| `workflow_dispatch` | stage | `stage` | Optional |
+| `workflow_dispatch` | stage | `stage` | Required |
 | `workflow_dispatch` | prod | `prod` | Required |
-| `repository_dispatch` | stage | `stage` | Optional |
-| `Release-Created` | stage, when the consumer accepts a prerelease | `stage` | Optional |
-| `schedule` | deploy | `stage-scheduled` | Auto |
+| `repository_dispatch` `Trigger-Deploy-Backend` | stage | `stage` | Required |
+| `repository_dispatch` `Trigger-Deploy-Backend` | prod | `prod` | Required |
+| `schedule` | public-site stage | `stage-scheduled` | Auto |
 | `schedule` | tests | `tests-scheduled` | Auto |

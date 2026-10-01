@@ -77,7 +77,7 @@ def main() -> int:
                 )
 
         manifest_sections = re.finditer(
-            r"^\s{6}manifest_name:\s*(?:>-\s*$.*?(?=^\s{6}[A-Za-z_][A-Za-z0-9_]*:)|\S.*$)",
+            r"^\s{6}manifest_name:\s*(?:>-\s*\n.*?(?=^\s{6}[A-Za-z_][A-Za-z0-9_]*:)|\S[^\n]*)",
             text,
             re.MULTILINE | re.DOTALL,
         )

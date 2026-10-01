@@ -85,9 +85,11 @@ jobs:
             echo "dry_run=$INPUT_DRY"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Cleanup matrix=$MATRIX keep=$INPUT_KEEP stale_days=$INPUT_DAYS dry_run=$INPUT_DRY"
-          echo "### Cleanup matrix" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`$MATRIX\` keep=$INPUT_KEEP days=$INPUT_DAYS dry_run=$INPUT_DRY" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Cleanup matrix"
+            echo ""
+            echo "\`$MATRIX\` keep=$INPUT_KEEP days=$INPUT_DAYS dry_run=$INPUT_DRY"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ──────────────────────────────────────────────────────────────────────────
   # Cleanup per environment

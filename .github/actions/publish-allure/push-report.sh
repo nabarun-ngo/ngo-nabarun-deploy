@@ -34,7 +34,7 @@ if (( TOTAL > MAX_HISTORY )); then
   TO_DELETE=$(( TOTAL - MAX_HISTORY ))
   printf '%s\n' "$EXISTING_RUNS" | head -n "$TO_DELETE" | while read -r dir; do
     echo "Pruning old report: ${RUNS_DIR}/${dir}"
-    rm -rf "${RUNS_DIR}/${dir}"
+    rm -rf "${RUNS_DIR:?}/${dir:?}"
   done
 fi
 

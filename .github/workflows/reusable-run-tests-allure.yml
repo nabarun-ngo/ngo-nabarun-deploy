@@ -218,6 +218,8 @@ jobs:
       - name: Require Doppler token
         if: ${{ inputs.doppler_project != '' }}
         env:
+          # Environment secret on the bound job. It is not a workflow_call secret.
+          # actionlint-disable-next-line expression
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           GH_ENV: ${{ inputs.gh_env }}
         run: |
@@ -232,6 +234,8 @@ jobs:
         continue-on-error: true
         working-directory: test-source
         env:
+          # Environment secret on the bound job. It is not a workflow_call secret.
+          # actionlint-disable-next-line expression
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           DOPPLER_PROJECT: ${{ inputs.doppler_project }}
           DOPPLER_CONFIG: ${{ inputs.doppler_config }}

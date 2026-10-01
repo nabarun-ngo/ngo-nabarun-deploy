@@ -47,9 +47,10 @@ on:
         default: ''
 
     secrets:
+      #This is only required if templates repo is private
       TEMPLATES_TOKEN:
         description: Token with read access to templates_repository.
-        required: true
+        required: false
 
 permissions:
   contents: read

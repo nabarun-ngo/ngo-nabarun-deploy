@@ -1,0 +1,213 @@
+2026-10-01T13:26:51.2420513Z Current runner version: '2.337.0'
+2026-10-01T13:26:51.2448744Z ##[group]Runner Image Provisioner
+2026-10-01T13:26:51.2450114Z Hosted Compute Agent
+2026-10-01T13:26:51.2451051Z Version: 20260901.588
+2026-10-01T13:26:51.2452042Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-01T13:26:51.2453245Z Build Date: 2026-09-01T19:56:44Z
+2026-10-01T13:26:51.2454291Z Worker ID: {395f5099-6df7-4880-8f97-17caa480b790}
+2026-10-01T13:26:51.2455447Z Azure Region: northcentralus
+2026-10-01T13:26:51.2456426Z ##[endgroup]
+2026-10-01T13:26:51.2458746Z ##[group]Operating System
+2026-10-01T13:26:51.2459782Z Ubuntu
+2026-10-01T13:26:51.2460565Z 24.04.5
+2026-10-01T13:26:51.2461360Z LTS
+2026-10-01T13:26:51.2462284Z ##[endgroup]
+2026-10-01T13:26:51.2463091Z ##[group]Runner Image
+2026-10-01T13:26:51.2464045Z Image: ubuntu-24.04
+2026-10-01T13:26:51.2464871Z Version: 20260927.320.1
+2026-10-01T13:26:51.2466878Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-01T13:26:51.2469672Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-01T13:26:51.2471411Z ##[endgroup]
+2026-10-01T13:26:51.2473307Z ##[group]GITHUB_TOKEN Permissions
+2026-10-01T13:26:51.2476364Z Contents: read
+2026-10-01T13:26:51.2477264Z Metadata: read
+2026-10-01T13:26:51.2478443Z PullRequests: write
+2026-10-01T13:26:51.2479390Z ##[endgroup]
+2026-10-01T13:26:51.2482159Z Secret source: Actions
+2026-10-01T13:26:51.2484288Z Cache mode: write
+2026-10-01T13:26:51.2485800Z Prepare workflow directory
+2026-10-01T13:26:51.2850611Z Prepare all required actions
+2026-10-01T13:26:51.2900965Z Getting action download info
+2026-10-01T13:26:51.5730503Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-10-01T13:26:51.7799706Z Complete job name: Lint shell scripts
+2026-10-01T13:26:51.8539081Z ##[group]Run echo "::notice::Lint scripts event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF}"
+2026-10-01T13:26:51.8540227Z [36;1mecho "::notice::Lint scripts event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF}"[0m
+2026-10-01T13:26:51.8796150Z shell: /usr/bin/bash -e {0}
+2026-10-01T13:26:51.8796981Z ##[endgroup]
+2026-10-01T13:26:51.9001217Z ##[notice]Lint scripts event=push ref=refs/heads/main
+2026-10-01T13:26:51.9238944Z ##[group]Run actions/checkout@v7
+2026-10-01T13:26:51.9239543Z with:
+2026-10-01T13:26:51.9240026Z   repository: nabarun-ngo/ngo-nabarun-deploy
+2026-10-01T13:26:51.9244311Z   token: ***
+2026-10-01T13:26:51.9244761Z   ssh-strict: true
+2026-10-01T13:26:51.9245210Z   ssh-user: git
+2026-10-01T13:26:51.9245671Z   persist-credentials: true
+2026-10-01T13:26:51.9246171Z   clean: true
+2026-10-01T13:26:51.9246621Z   sparse-checkout-cone-mode: true
+2026-10-01T13:26:51.9247151Z   fetch-depth: 1
+2026-10-01T13:26:51.9247606Z   fetch-tags: false
+2026-10-01T13:26:51.9248267Z   show-progress: true
+2026-10-01T13:26:51.9248727Z   lfs: false
+2026-10-01T13:26:51.9249146Z   submodules: false
+2026-10-01T13:26:51.9249600Z   set-safe-directory: true
+2026-10-01T13:26:51.9250144Z   allow-unsafe-pr-checkout: false
+2026-10-01T13:26:51.9250689Z ##[endgroup]
+2026-10-01T13:26:52.0226877Z Syncing repository: nabarun-ngo/ngo-nabarun-deploy
+2026-10-01T13:26:52.0229212Z ##[group]Getting Git version info
+2026-10-01T13:26:52.0230134Z Working directory is '/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy'
+2026-10-01T13:26:52.0231341Z [command]/usr/bin/git version
+2026-10-01T13:26:52.0311353Z git version 2.55.0
+2026-10-01T13:26:52.0336837Z ##[endgroup]
+2026-10-01T13:26:52.0357513Z Temporarily overriding HOME='/home/runner/work/_temp/df4173f5-af39-48e6-a986-7aa93f15e047' before making global git config changes
+2026-10-01T13:26:52.0359920Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-01T13:26:52.0361947Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy
+2026-10-01T13:26:52.0419086Z Deleting the contents of '/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy'
+2026-10-01T13:26:52.0423547Z ##[group]Determining repository object format
+2026-10-01T13:26:52.0426323Z ##[endgroup]
+2026-10-01T13:26:52.0427962Z ##[group]Initializing the repository
+2026-10-01T13:26:52.0535019Z [command]/usr/bin/git init /home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy
+2026-10-01T13:26:52.0536737Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-01T13:26:52.0538522Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-01T13:26:52.0540108Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-01T13:26:52.0541035Z hint: call:
+2026-10-01T13:26:52.0541598Z hint:
+2026-10-01T13:26:52.0542288Z hint: 	git config --global init.defaultBranch <name>
+2026-10-01T13:26:52.0543071Z hint:
+2026-10-01T13:26:52.0543809Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-01T13:26:52.0545186Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-01T13:26:52.0546280Z hint:
+2026-10-01T13:26:52.0546855Z hint: 	git branch -m <name>
+2026-10-01T13:26:52.0547484Z hint:
+2026-10-01T13:26:52.0548843Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-01T13:26:52.0550285Z Initialized empty Git repository in /home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.git/
+2026-10-01T13:26:52.0553006Z [command]/usr/bin/git remote add origin https://github.com/nabarun-ngo/ngo-nabarun-deploy
+2026-10-01T13:26:52.0604098Z ##[endgroup]
+2026-10-01T13:26:52.0604919Z ##[group]Disabling automatic garbage collection
+2026-10-01T13:26:52.0608316Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-01T13:26:52.0642178Z ##[endgroup]
+2026-10-01T13:26:52.0643549Z ##[group]Setting up auth
+2026-10-01T13:26:52.0644362Z Removing SSH command configuration
+2026-10-01T13:26:52.0649481Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-01T13:26:52.0696940Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-01T13:26:52.1054283Z Removing HTTP extra header
+2026-10-01T13:26:52.1061186Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-01T13:26:52.1101015Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-01T13:26:52.1343358Z Removing includeIf entries pointing to credentials config files
+2026-10-01T13:26:52.1348403Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-01T13:26:52.1386036Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-01T13:26:52.1631111Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-1afccd07-84fe-4977-826c-97561708d269.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-01T13:26:52.1676512Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.git.path /home/runner/work/_temp/git-credentials-1afccd07-84fe-4977-826c-97561708d269.config
+2026-10-01T13:26:52.1716772Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-1afccd07-84fe-4977-826c-97561708d269.config
+2026-10-01T13:26:52.1758694Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-1afccd07-84fe-4977-826c-97561708d269.config
+2026-10-01T13:26:52.1798090Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-1afccd07-84fe-4977-826c-97561708d269.config
+2026-10-01T13:26:52.1833696Z ##[endgroup]
+2026-10-01T13:26:52.1834802Z ##[group]Fetching the repository
+2026-10-01T13:26:52.1841920Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +0f4123fd07edf430993e0056b33f89ab3cd854e5:refs/remotes/origin/main
+2026-10-01T13:26:52.5525402Z From https://github.com/nabarun-ngo/ngo-nabarun-deploy
+2026-10-01T13:26:52.5526623Z  * [new ref]         0f4123fd07edf430993e0056b33f89ab3cd854e5 -> origin/main
+2026-10-01T13:26:52.5535287Z [command]/usr/bin/git branch --list --remote origin/main
+2026-10-01T13:26:52.5567084Z   origin/main
+2026-10-01T13:26:52.5576245Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+2026-10-01T13:26:52.5609024Z 0f4123fd07edf430993e0056b33f89ab3cd854e5
+2026-10-01T13:26:52.5613250Z ##[endgroup]
+2026-10-01T13:26:52.5614607Z ##[group]Determining the checkout info
+2026-10-01T13:26:52.5616283Z ##[endgroup]
+2026-10-01T13:26:52.5618027Z [command]/usr/bin/git sparse-checkout disable
+2026-10-01T13:26:52.5675005Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-01T13:26:52.5712115Z ##[group]Checking out the ref
+2026-10-01T13:26:52.5715651Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-10-01T13:26:52.5829246Z Switched to a new branch 'main'
+2026-10-01T13:26:52.5834752Z branch 'main' set up to track 'origin/main'.
+2026-10-01T13:26:52.5842958Z ##[endgroup]
+2026-10-01T13:26:52.5890750Z [command]/usr/bin/git log -1 --format=%H
+2026-10-01T13:26:52.5922597Z 0f4123fd07edf430993e0056b33f89ab3cd854e5
+2026-10-01T13:26:52.6073347Z ##[group]Run sudo apt-get update
+2026-10-01T13:26:52.6074004Z [36;1msudo apt-get update[0m
+2026-10-01T13:26:52.6074608Z [36;1msudo apt-get install -y shellcheck[0m
+2026-10-01T13:26:52.6075253Z [36;1mshellcheck --version[0m
+2026-10-01T13:26:52.6147541Z shell: /usr/bin/bash -e {0}
+2026-10-01T13:26:52.6148299Z ##[endgroup]
+2026-10-01T13:26:52.7002811Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-10-01T13:26:52.7401147Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+2026-10-01T13:26:52.7403988Z Get:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+2026-10-01T13:26:52.7415518Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+2026-10-01T13:26:52.7496104Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+2026-10-01T13:26:52.7536077Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+2026-10-01T13:26:52.8787483Z Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [456 kB]
+2026-10-01T13:26:52.8951632Z Get:8 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [509 kB]
+2026-10-01T13:26:52.9366389Z Get:9 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1359 kB]
+2026-10-01T13:26:52.9455006Z Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [303 kB]
+2026-10-01T13:26:52.9480550Z Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [181 kB]
+2026-10-01T13:26:52.9501879Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1699 kB]
+2026-10-01T13:26:52.9596185Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [341 kB]
+2026-10-01T13:26:52.9622784Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
+2026-10-01T13:26:52.9681517Z Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1717 kB]
+2026-10-01T13:26:52.9748521Z Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [393 kB]
+2026-10-01T13:26:52.9784065Z Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+2026-10-01T13:26:53.0024603Z Get:18 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5760 B]
+2026-10-01T13:26:53.0469020Z Get:19 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
+2026-10-01T13:26:53.0698154Z Get:20 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1069 kB]
+2026-10-01T13:26:53.0767251Z Get:21 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [221 kB]
+2026-10-01T13:26:53.0796605Z Get:22 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
+2026-10-01T13:26:53.0812975Z Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1216 kB]
+2026-10-01T13:26:53.0890126Z Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [244 kB]
+2026-10-01T13:26:53.0919678Z Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
+2026-10-01T13:26:53.0942274Z Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1566 kB]
+2026-10-01T13:26:53.1036414Z Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [361 kB]
+2026-10-01T13:26:57.7450453Z Fetched 12.5 MB in 1s (8605 kB/s)
+2026-10-01T13:26:58.6054050Z Reading package lists...
+2026-10-01T13:26:58.6384990Z Reading package lists...
+2026-10-01T13:26:58.8702264Z Building dependency tree...
+2026-10-01T13:26:58.8709401Z Reading state information...
+2026-10-01T13:26:59.1730675Z shellcheck is already the newest version (0.9.0-1).
+2026-10-01T13:26:59.1731739Z 0 upgraded, 0 newly installed, 0 to remove and 24 not upgraded.
+2026-10-01T13:27:00.3340650Z ShellCheck - shell script analysis tool
+2026-10-01T13:27:00.3341881Z version: 0.9.0
+2026-10-01T13:27:00.3342424Z license: GNU General Public License, version 3
+2026-10-01T13:27:00.3343051Z website: https://www.shellcheck.net
+2026-10-01T13:27:00.4209233Z ##[group]Run find scripts/ .github/actions/ -name '*.sh' -print0 \
+2026-10-01T13:27:00.4209835Z [36;1mfind scripts/ .github/actions/ -name '*.sh' -print0 \[0m
+2026-10-01T13:27:00.4210343Z [36;1m  | xargs -0 --no-run-if-empty shellcheck --severity=warning[0m
+2026-10-01T13:27:00.4295769Z shell: /usr/bin/bash -e {0}
+2026-10-01T13:27:00.4296311Z ##[endgroup]
+2026-10-01T13:27:01.9933492Z 
+2026-10-01T13:27:01.9934496Z In .github/actions/publish-allure/push-report.sh line 37:
+2026-10-01T13:27:01.9935510Z     rm -rf "${RUNS_DIR}/${dir}"
+2026-10-01T13:27:01.9936292Z            ^------------------^ SC2115 (warning): Use "${var:?}" to ensure this never expands to / .
+2026-10-01T13:27:01.9936680Z 
+2026-10-01T13:27:01.9936819Z For more information:
+2026-10-01T13:27:01.9937255Z   https://www.shellcheck.net/wiki/SC2115 -- Use "${var:?}" to ensure this nev...
+2026-10-01T13:27:01.9968802Z ##[error]Process completed with exit code 123.
+2026-10-01T13:27:02.0087180Z Post job cleanup.
+2026-10-01T13:27:02.0959631Z [command]/usr/bin/git version
+2026-10-01T13:27:02.1004861Z git version 2.55.0
+2026-10-01T13:27:02.1053349Z Temporarily overriding HOME='/home/runner/work/_temp/95b19646-9bb4-434e-99ab-ca44dbf70fac' before making global git config changes
+2026-10-01T13:27:02.1054592Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-01T13:27:02.1059684Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy
+2026-10-01T13:27:02.1098654Z Removing SSH command configuration
+2026-10-01T13:27:02.1106029Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-01T13:27:02.1147341Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-01T13:27:02.1424803Z Removing HTTP extra header
+2026-10-01T13:27:02.1431880Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-01T13:27:02.1470074Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-01T13:27:02.1733060Z Removing includeIf entries pointing to credentials config files
+2026-10-01T13:27:02.1738983Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-01T13:27:02.1773583Z includeif.gitdir:/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.git.path
+2026-10-01T13:27:02.1774843Z includeif.gitdir:/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.git/worktrees/*.path
+2026-10-01T13:27:02.1775856Z includeif.gitdir:/github/workspace/.git.path
+2026-10-01T13:27:02.1776613Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-01T13:27:02.1782392Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.git.path
+2026-10-01T13:27:02.1825638Z /home/runner/work/_temp/git-credentials-1afccd07-84fe-4977-826c-97561708d269.config
+2026-10-01T13:27:02.1831393Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-1afccd07\-84fe\-4977\-826c\-97561708d269\.config
+2026-10-01T13:27:02.1888196Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.git/worktrees/*.path
+2026-10-01T13:27:02.1918667Z /home/runner/work/_temp/git-credentials-1afccd07-84fe-4977-826c-97561708d269.config
+2026-10-01T13:27:02.1937393Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-1afccd07\-84fe\-4977\-826c\-97561708d269\.config
+2026-10-01T13:27:02.1982352Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-01T13:27:02.2012876Z /github/runner_temp/git-credentials-1afccd07-84fe-4977-826c-97561708d269.config
+2026-10-01T13:27:02.2020566Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-1afccd07\-84fe\-4977\-826c\-97561708d269\.config
+2026-10-01T13:27:02.2062450Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-01T13:27:02.2091333Z /github/runner_temp/git-credentials-1afccd07-84fe-4977-826c-97561708d269.config
+2026-10-01T13:27:02.2101520Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-1afccd07\-84fe\-4977\-826c\-97561708d269\.config
+2026-10-01T13:27:02.2143794Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-01T13:27:02.2388564Z Removing credentials config '/home/runner/work/_temp/git-credentials-1afccd07-84fe-4977-826c-97561708d269.config'
+2026-10-01T13:27:02.2539218Z Cleaning up orphan processes

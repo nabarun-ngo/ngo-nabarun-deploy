@@ -11,6 +11,8 @@ Pull request gate for conventional commit titles. A title or commit must use one
 
 Library repositories also call [reusable-ci-changeset-check](reusable-ci-changeset-check.md), which checks that the declared Changeset bump matches the commit. Application repositories call this workflow and [reusable-ci-tag-release](reusable-ci-tag-release.md).
 
+**Commit title policy:** only the pull request title is a hard failure — it is editable in the GitHub UI without touching history, and it is what release automation reads. Individual commit messages pushed to the branch (`wip`, `fix typo`, ...) are reported as `::warning::` annotations and do not fail the job; cleaning them up would need an amend/rebase and force-push, and most merge strategies discard them anyway.
+
 ## How the client consumes it
 
 ```yaml

@@ -214,7 +214,7 @@ jobs:
           #!/bin/bash
           set -euo pipefail
           bash -euo pipefail -c "$VERSION_COMMAND"
-          python3 -c 'import os; from pathlib import Path; import release_model; release_model.shift_initial_prerelease(Path(".").resolve(), os.environ["PRERELEASE_TAG"])'
+          python3 "$RUNNER_TEMP/release-model/release_model.py" shift-prerelease --root . --tag "$PRERELEASE_TAG"
           EOF
           chmod +x "$RUNNER_TEMP/version-packages.sh"
 
@@ -336,7 +336,6 @@ jobs:
           PR_TITLE: ${{ inputs.changeset_title }}
           PR_COMMIT: ${{ inputs.changeset_commit }}
           PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
-          PYTHONPATH: ${{ runner.temp }}/release-model
           GIT_AUTHOR_NAME: github-actions[bot]
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
@@ -390,7 +389,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           VERSION_COMMAND: ${{ inputs.version_command }}
           PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
-          PYTHONPATH: ${{ runner.temp }}/release-model
 
       - name: Decide if version is ready
         id: gate
@@ -615,7 +613,6 @@ jobs:
           STABLE_COMMAND: ${{ inputs.publish_command }}
           PRERELEASE_COMMAND: ${{ inputs.prerelease_publish_command }}
           PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
-          PYTHONPATH: ${{ runner.temp }}/release-model
         run: |
           set -euo pipefail
 
@@ -629,38 +626,13 @@ jobs:
           }
 
           skip_if_published() {
-            python3 - << 'PY'
-          import subprocess, sys
-          from pathlib import Path
-          import release_model
-          packages = release_model.public_versions(Path(".").resolve())
-          if not packages:
-              sys.exit(0)
-          for package in packages:
-              spec = f"{package['name']}@{package['version']}"
-              if subprocess.run(["npm", "view", spec, "version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
-                  sys.exit(1)
-          sys.exit(0)
-          PY
+            python3 "$RUNNER_TEMP/release-model/release_model.py" skip-if-published --root .
           }
 
           verify_dist_tag() {
-            python3 - << 'PY'
-          import json, os, subprocess, time
-          from pathlib import Path
-          import release_model
-          tag = os.environ["PRERELEASE_TAG"] if os.environ["CURRENT_BRANCH"] == os.environ["PRERELEASE_BRANCH"] else "latest"
-          for package in release_model.public_versions(Path(".").resolve()):
-              seen = None
-              for _ in range(3):
-                  raw = subprocess.check_output(["npm", "view", package["name"], "dist-tags", "--json"], text=True)
-                  seen = json.loads(raw).get(tag)
-                  if seen == package["version"]:
-                      break
-                  time.sleep(2)
-              if seen != package["version"]:
-                  raise SystemExit(f"{package['name']} {tag} dist-tag is {seen}, expected {package['version']}")
-          PY
+            local tag="$PRERELEASE_TAG"
+            [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]] || tag="latest"
+            python3 "$RUNNER_TEMP/release-model/release_model.py" verify-dist-tag --root . --tag "$tag"
           }
 
           if skip_if_published; then
@@ -671,7 +643,7 @@ jobs:
           if [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]]; then
             npm config set tag "$PRERELEASE_TAG"
             echo "::notice::Running prerelease publish command: $PRERELEASE_COMMAND"
-            python3 -c 'import os, release_model; release_model.assert_library_versions(__import__("pathlib").Path(".").resolve(), prerelease=True, tag=os.environ["PRERELEASE_TAG"])'
+            python3 "$RUNNER_TEMP/release-model/release_model.py" assert-versions --root . --tag "$PRERELEASE_TAG" --prerelease
             run_publish "$PRERELEASE_COMMAND"
             verify_dist_tag
           elif [[ "$CURRENT_BRANCH" == "$STABLE_BRANCH" ]]; then
@@ -680,7 +652,7 @@ jobs:
               echo "::error::Refusing to publish on $STABLE_BRANCH while .changeset/pre.json exists"
               exit 1
             fi
-            python3 -c 'import release_model; release_model.assert_library_versions(__import__("pathlib").Path(".").resolve(), prerelease=False, tag="beta")'
+            python3 "$RUNNER_TEMP/release-model/release_model.py" assert-versions --root . --tag beta
             while IFS= read -r -d '' pkg; do
               private=$(jq -r '.private // false' "$pkg")
               ver=$(jq -r '.version // empty' "$pkg")

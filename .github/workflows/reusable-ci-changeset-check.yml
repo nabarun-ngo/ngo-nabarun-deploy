@@ -47,10 +47,9 @@ on:
         default: ''
 
     secrets:
-      #This is only required if templates repo is private
       TEMPLATES_TOKEN:
         description: Token with read access to templates_repository.
-        required: false
+        required: true
 
 permissions:
   contents: read
@@ -157,38 +156,10 @@ jobs:
           SKIP_CHANGESET: ${{ steps.version_pr.outputs.generated }}
           PACKAGES_CHANGED: ${{ steps.changes.outputs.packages }}
           WORKING_DIRECTORY: ${{ inputs.working_directory }}
-          PYTHONPATH: ${{ runner.temp }}/release-model
         run: |
           set -euo pipefail
           git fetch origin "$BASE_REF"
-          python3 - << 'PY'
-          import os, subprocess, sys
-          from pathlib import Path
-          import release_model
-          base = os.environ["BASE_REF"]
-          log = subprocess.check_output(["git", "log", "--format=%B%x1f", f"origin/{base}..HEAD"], text=True)
-          commits = [item.strip("\n") for item in log.split("\x1f") if item.strip()]
-          changesets = []
-          root = Path(os.environ.get("WORKING_DIRECTORY") or ".")
-          changeset_dir = root / ".changeset"
-          if changeset_dir.is_dir():
-              for path in changeset_dir.glob("*.md"):
-                  if path.name != "README.md":
-                      changesets.append(path.read_text(encoding="utf-8"))
-          payload = {
-              "title": os.environ["PR_TITLE"],
-              "commits": commits,
-              "changesets": changesets,
-              "packages_changed": os.environ.get("PACKAGES_CHANGED") == "true",
-              "skip_changeset": os.environ["SKIP_CHANGESET"] == "true",
-          }
-          errors = release_model.validate_pull_request(payload)
-          if errors:
-              for error in errors:
-                  print(f"::error::{error}")
-              sys.exit(1)
-          print("Release commit policy passed")
-          PY
+          python3 "$RUNNER_TEMP/release-model/release_model.py" check-pr
 
       - name: Setup Node.js
         if: steps.changes.outputs.packages == 'true' && steps.version_pr.outputs.generated != 'true'

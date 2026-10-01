@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -266,9 +269,20 @@ def parse_changeset_bumps(text: str) -> list[str]:
     return bumps
 
 
-def validate_pull_request(payload: dict) -> list[str]:
-    """Return release-policy errors for one pull request."""
+def validate_pull_request(payload: dict) -> dict[str, list[str]]:
+    """Return release-policy findings for one pull request as {"errors": [...], "warnings": [...]}.
+
+    The pull request title is what actually becomes the release/changelog
+    entry and is trivially editable in the GitHub UI with no history rewrite,
+    so an invalid title is a hard error. Individual raw commit messages
+    (`wip`, `fix typo`, ...) commonly do not follow the convention and fixing
+    them requires an amend/rebase + force-push; they are reported as warnings
+    so they are visible without blocking the merge. Only the title and the
+    changeset bump (when not skipped) determine the release version, so
+    warning-only commits do not affect that calculation.
+    """
     errors = []
+    warnings = []
     title = parse_commit(payload.get("title") or "")
     if not title["valid"]:
         errors.append(
@@ -278,9 +292,12 @@ def validate_pull_request(payload: dict) -> list[str]:
     commits = [parse_commit(message) for message in payload.get("commits", [])]
     for commit in commits:
         if not commit["valid"]:
-            errors.append(f"Invalid commit title: {commit['subject']}")
+            warnings.append(
+                f"Invalid commit title: {commit['subject']} (not a release blocker; "
+                "only the pull request title needs to be a conventional commit)"
+            )
     if payload.get("skip_changeset"):
-        return errors
+        return {"errors": errors, "warnings": warnings}
 
     bump = highest_bump([title, *commits])
     changeset_bumps = []
@@ -299,7 +316,66 @@ def validate_pull_request(payload: dict) -> list[str]:
         errors.append(
             f"Changeset bump '{declared}' does not match conventional commit bump '{bump}'"
         )
-    return errors
+    return {"errors": errors, "warnings": warnings}
+
+
+def report_pull_request_findings(result: dict[str, list[str]]) -> int:
+    """Print a validate_pull_request()/check_pull_request_from_env() result and return an exit code.
+
+    Warnings are visible but never fail the job; only errors do.
+    """
+    for warning in result.get("warnings", []):
+        print(f"::warning::{warning}")
+    errors = result.get("errors", [])
+    if errors:
+        for error in errors:
+            print(f"::error::{error}")
+        return 1
+    print("Release commit policy passed")
+    return 0
+
+
+def parse_commit_log(blob: str) -> list[str]:
+    """Split a `git log --format=%B%x1f` blob into individual commit messages."""
+    return [item.strip("\n") for item in blob.split("\x1f") if item.strip()]
+
+
+def commits_since(base_ref: str) -> list[str]:
+    """Commit messages reachable from HEAD but not from origin/<base_ref>."""
+    blob = subprocess.check_output(
+        ["git", "log", "--format=%B%x1f", f"origin/{base_ref}..HEAD"], text=True
+    )
+    return parse_commit_log(blob)
+
+
+def read_changesets(working_directory: str) -> list[str]:
+    """Contents of every pending Changeset file under <working_directory>/.changeset."""
+    changeset_dir = Path(working_directory or ".") / ".changeset"
+    if not changeset_dir.is_dir():
+        return []
+    return [
+        path.read_text(encoding="utf-8")
+        for path in sorted(changeset_dir.glob("*.md"))
+        if path.name != "README.md"
+    ]
+
+
+def check_pull_request_from_env() -> dict[str, list[str]]:
+    """Validate the current pull request using BASE_REF/PR_TITLE/etc. from the environment.
+
+    Callers that only enforce the conventional-commit title (not the changeset
+    bump, e.g. application repos) can leave SKIP_CHANGESET/PACKAGES_CHANGED/
+    WORKING_DIRECTORY unset; the defaults reproduce that narrower check.
+    """
+    base_ref = os.environ["BASE_REF"]
+    payload = {
+        "title": os.environ.get("PR_TITLE", ""),
+        "commits": commits_since(base_ref),
+        "changesets": read_changesets(os.environ.get("WORKING_DIRECTORY", ".")),
+        "packages_changed": os.environ.get("PACKAGES_CHANGED") == "true",
+        "skip_changeset": os.environ.get("SKIP_CHANGESET", "true") == "true",
+    }
+    return validate_pull_request(payload)
 
 
 def iter_package_json(root: Path) -> list[Path]:
@@ -340,6 +416,41 @@ def assert_library_versions(root: Path, *, prerelease: bool, tag: str) -> None:
             errors.append(f"{package['name']}@{package['version']} is not a {expected} release")
     if errors:
         raise ValueError("; ".join(errors))
+
+
+def skip_if_already_published(root: Path) -> bool:
+    """True when every public package version in <root> is already on npm."""
+    packages = public_versions(root)
+    if not packages:
+        return True
+    for package in packages:
+        spec = f"{package['name']}@{package['version']}"
+        result = subprocess.run(
+            ["npm", "view", spec, "version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if result.returncode != 0:
+            return False
+    return True
+
+
+def verify_dist_tag(root: Path, tag: str) -> None:
+    """Fail unless npm's `tag` dist-tag matches the local version for every public package."""
+    for package in public_versions(root):
+        seen = None
+        for _ in range(3):
+            raw = subprocess.check_output(
+                ["npm", "view", package["name"], "dist-tags", "--json"], text=True
+            )
+            seen = json.loads(raw).get(tag)
+            if seen == package["version"]:
+                break
+            time.sleep(2)
+        if seen != package["version"]:
+            raise ValueError(
+                f"{package['name']} {tag} dist-tag is {seen}, expected {package['version']}"
+            )
 
 
 def shift_initial_prerelease(root: Path, tag: str) -> list[str]:
@@ -388,6 +499,19 @@ def build_parser() -> argparse.ArgumentParser:
     shift = commands.add_parser("shift-prerelease")
     shift.add_argument("--root", required=True)
     shift.add_argument("--tag", required=True)
+    commands.add_parser(
+        "check-pr",
+        help="Validate the current pull request from BASE_REF/PR_TITLE/etc. in the environment.",
+    )
+    skip_published = commands.add_parser("skip-if-published")
+    skip_published.add_argument("--root", required=True)
+    verify_tag = commands.add_parser("verify-dist-tag")
+    verify_tag.add_argument("--root", required=True)
+    verify_tag.add_argument("--tag", required=True)
+    assert_versions = commands.add_parser("assert-versions")
+    assert_versions.add_argument("--root", required=True)
+    assert_versions.add_argument("--tag", required=True)
+    assert_versions.add_argument("--prerelease", action="store_true")
     return parser
 
 
@@ -401,13 +525,8 @@ def main(argv: list[str]) -> int:
         print(select_baseline(json.loads(Path(args.payload).read_text(encoding="utf-8"))) or "")
         return 0
     if args.command == "validate-pr":
-        errors = validate_pull_request(json.loads(Path(args.payload).read_text(encoding="utf-8")))
-        if errors:
-            for error in errors:
-                print(f"::error::{error}", file=sys.stderr)
-            return 1
-        print("Release pull request policy passed")
-        return 0
+        result = validate_pull_request(json.loads(Path(args.payload).read_text(encoding="utf-8")))
+        return report_pull_request_findings(result)
     if args.command == "apply":
         version_path = Path(args.version_file)
         version_path.write_text(
@@ -426,9 +545,24 @@ def main(argv: list[str]) -> int:
             encoding="utf-8",
         )
         return 0
-    changed = shift_initial_prerelease(Path(args.root), args.tag)
-    print(json.dumps(changed))
-    return 0
+    if args.command == "shift-prerelease":
+        changed = shift_initial_prerelease(Path(args.root), args.tag)
+        print(json.dumps(changed))
+        return 0
+    if args.command == "check-pr":
+        result = check_pull_request_from_env()
+        return report_pull_request_findings(result)
+    if args.command == "skip-if-published":
+        return 0 if skip_if_already_published(Path(args.root)) else 1
+    if args.command == "verify-dist-tag":
+        verify_dist_tag(Path(args.root), args.tag)
+        print(f"dist-tag '{args.tag}' matches the published version for every package")
+        return 0
+    if args.command == "assert-versions":
+        assert_library_versions(Path(args.root), prerelease=args.prerelease, tag=args.tag)
+        print("Library package versions match the branch")
+        return 0
+    raise AssertionError(f"Unhandled command '{args.command}'")
 
 
 if __name__ == "__main__":

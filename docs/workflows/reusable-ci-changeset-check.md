@@ -8,6 +8,8 @@ Does not version or publish. Pair with [reusable-ci-publish](reusable-ci-publish
 
 A same-repository pull request from `changeset-release/<base>` is the generated Version Packages pull request. That pull request skips the requirement for another Changeset. Its title is still checked. Feature pull requests are checked regardless of who opens them.
 
+**Commit title policy:** the pull request title must be a conventional commit (`fix:`, `feat:`, `feat!:`, `docs:`, `chore:`, or `ci:`) — that is a hard failure, since it is what the release/changelog actually uses and is editable in the GitHub UI without touching history. Individual commit messages pushed to the branch (`wip`, `address review comments`, ...) are reported as `::warning::` annotations, not failures — fixing those would require an amend/rebase and force-push, and they are discarded on merge, so they do not need to block the pull request. Only the title (and, when a changeset is required, its declared bump) determine the release version.
+
 ## Who calls it
 
 Package monorepos (`packages/**`) on `pull_request` to `main` and/or `develop`. Not used by this ops repo. App-only repos usually skip this unless they version with Changesets. Application repositories call [reusable-ci-commit-check](reusable-ci-commit-check.md) instead.

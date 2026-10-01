@@ -75,26 +75,7 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           BASE_REF: ${{ github.base_ref }}
-          PYTHONPATH: ${{ runner.temp }}/release-model
         run: |
           set -euo pipefail
           git fetch origin "$BASE_REF"
-          python3 - << 'PY'
-          import os, subprocess, sys
-          import release_model
-          base = os.environ["BASE_REF"]
-          log = subprocess.check_output(["git", "log", "--format=%B%x1f", f"origin/{base}..HEAD"], text=True)
-          commits = [item.strip("\n") for item in log.split("\x1f") if item.strip()]
-          errors = release_model.validate_pull_request({
-              "title": os.environ.get("PR_TITLE", ""),
-              "commits": commits,
-              "changesets": [],
-              "packages_changed": False,
-              "skip_changeset": True,
-          })
-          if errors:
-              for error in errors:
-                  print(f"::error::{error}")
-              sys.exit(1)
-          print("Conventional commit policy passed")
-          PY
+          python3 "$RUNNER_TEMP/release-model/release_model.py" check-pr

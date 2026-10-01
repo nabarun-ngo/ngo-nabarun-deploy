@@ -9,6 +9,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import release_model
 
@@ -86,22 +87,60 @@ class ReleaseModelTests(unittest.TestCase):
             plan(commits=["update validation"])
 
     def test_library_pr_requires_matching_changeset_bump(self) -> None:
-        errors = release_model.validate_pull_request({
+        result = release_model.validate_pull_request({
             "title": "feat: add filtering",
             "commits": ["feat: add filtering"],
             "packages_changed": True,
             "changesets": ['---\n"@example/pkg": patch\n---\n\nNotes\n'],
         })
-        self.assertTrue(any("does not match" in error for error in errors))
+        self.assertTrue(any("does not match" in error for error in result["errors"]))
 
     def test_maintenance_pr_cannot_declare_a_release(self) -> None:
-        errors = release_model.validate_pull_request({
+        result = release_model.validate_pull_request({
             "title": "chore: tidy build",
             "commits": ["chore: tidy build"],
             "packages_changed": True,
             "changesets": ['---\n"@example/pkg": patch\n---\n\nNotes\n'],
         })
-        self.assertTrue(errors)
+        self.assertTrue(result["errors"])
+
+    def test_invalid_individual_commit_warns_but_does_not_block(self) -> None:
+        # The PR title is a conventional commit, so this only has one bad
+        # individual commit message (e.g. a "wip" commit before cleanup).
+        # That must be a warning, not an error: it should not block merge.
+        result = release_model.validate_pull_request({
+            "title": "fix: correct validation",
+            "commits": ["fix: correct validation", "wip", "address review comments"],
+            "packages_changed": False,
+            "skip_changeset": True,
+        })
+        self.assertEqual([], result["errors"])
+        self.assertTrue(any("wip" in warning for warning in result["warnings"]))
+        self.assertTrue(any("address review comments" in warning for warning in result["warnings"]))
+
+    def test_invalid_pull_request_title_still_blocks(self) -> None:
+        result = release_model.validate_pull_request({
+            "title": "update stuff",
+            "commits": ["update stuff"],
+            "packages_changed": False,
+            "skip_changeset": True,
+        })
+        self.assertTrue(any("conventional commit" in error for error in result["errors"]))
+
+    def test_report_pull_request_findings_warnings_do_not_fail(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            exit_code = release_model.report_pull_request_findings(
+                {"errors": [], "warnings": ["Invalid commit title: wip"]}
+            )
+        self.assertEqual(0, exit_code)
+        self.assertIn("::warning::Invalid commit title: wip", out.getvalue())
+
+    def test_report_pull_request_findings_errors_fail(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            exit_code = release_model.report_pull_request_findings(
+                {"errors": ["Pull request title must be a conventional commit."], "warnings": []}
+            )
+        self.assertEqual(1, exit_code)
 
     def test_initial_prerelease_zero_becomes_one(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -144,6 +183,84 @@ class ReleaseModelTests(unittest.TestCase):
                 release_model.assert_library_versions(root, prerelease=True, tag="beta")
             release_model.shift_initial_prerelease(root, "beta")
             release_model.assert_library_versions(root, prerelease=True, tag="beta")
+
+    def test_parse_commit_log_splits_on_unit_separator(self) -> None:
+        blob = "fix: a\x1f\nfeat: b\n\x1f\n\x1f"
+        self.assertEqual(["fix: a", "feat: b"], release_model.parse_commit_log(blob))
+
+    def test_read_changesets_skips_readme(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            changeset_dir = root / ".changeset"
+            changeset_dir.mkdir()
+            (changeset_dir / "README.md").write_text("ignored", encoding="utf-8")
+            (changeset_dir / "bump.md").write_text(
+                '---\n"@example/pkg": patch\n---\n', encoding="utf-8"
+            )
+            contents = release_model.read_changesets(str(root))
+            self.assertEqual(1, len(contents))
+            self.assertIn("patch", contents[0])
+
+    def test_read_changesets_missing_directory_is_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual([], release_model.read_changesets(directory))
+
+    def test_check_pull_request_defaults_skip_changeset_like_commit_check(self) -> None:
+        # reusable-ci-commit-check.yml leaves SKIP_CHANGESET/PACKAGES_CHANGED/
+        # WORKING_DIRECTORY unset; defaults must reproduce its narrower,
+        # title-only check.
+        env = {"BASE_REF": "main", "PR_TITLE": "chore: tidy build"}
+        with mock.patch.object(release_model, "commits_since", return_value=["chore: tidy build"]):
+            with mock.patch.dict("os.environ", env, clear=True):
+                result = release_model.check_pull_request_from_env()
+                self.assertEqual({"errors": [], "warnings": []}, result)
+
+    def test_check_pull_request_rejects_invalid_title_by_default(self) -> None:
+        env = {"BASE_REF": "main", "PR_TITLE": "update stuff"}
+        with mock.patch.object(release_model, "commits_since", return_value=[]):
+            with mock.patch.dict("os.environ", env, clear=True):
+                result = release_model.check_pull_request_from_env()
+                self.assertTrue(any("conventional commit" in error for error in result["errors"]))
+
+    def test_check_pull_request_warns_on_invalid_individual_commit(self) -> None:
+        # Matches reusable-ci-commit-check.yml's defaults: valid title, one
+        # messy individual commit. Must warn, not fail.
+        env = {"BASE_REF": "main", "PR_TITLE": "fix: correct validation"}
+        with mock.patch.object(
+            release_model, "commits_since", return_value=["fix: correct validation", "wip"]
+        ):
+            with mock.patch.dict("os.environ", env, clear=True):
+                result = release_model.check_pull_request_from_env()
+                self.assertEqual([], result["errors"])
+                self.assertTrue(any("wip" in warning for warning in result["warnings"]))
+
+    def test_check_pull_request_enforces_changeset_bump_when_not_skipped(self) -> None:
+        env = {
+            "BASE_REF": "main",
+            "PR_TITLE": "feat: add filtering",
+            "SKIP_CHANGESET": "false",
+            "PACKAGES_CHANGED": "true",
+        }
+        with mock.patch.object(release_model, "commits_since", return_value=["feat: add filtering"]):
+            with mock.patch.object(release_model, "read_changesets", return_value=[]):
+                with mock.patch.dict("os.environ", env, clear=True):
+                    result = release_model.check_pull_request_from_env()
+                    self.assertTrue(any("changeset" in error for error in result["errors"]))
+
+    def test_skip_if_already_published_true_without_public_packages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertTrue(release_model.skip_if_already_published(Path(directory)))
+
+    def test_skip_if_already_published_reflects_npm_view(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "package.json").write_text(
+                '{"name":"example","version":"1.0.0"}\n', encoding="utf-8"
+            )
+            with mock.patch.object(release_model.subprocess, "run", return_value=mock.Mock(returncode=0)):
+                self.assertTrue(release_model.skip_if_already_published(root))
+            with mock.patch.object(release_model.subprocess, "run", return_value=mock.Mock(returncode=1)):
+                self.assertFalse(release_model.skip_if_already_published(root))
 
     def test_cli_plan_is_stable_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

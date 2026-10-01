@@ -59,6 +59,12 @@ jobs:
           publish_dir: portal-out
           publish_branch: gh-pages
           keep_files: true
+          # false adds .nojekyll automatically. Allure history on this same
+          # branch can exceed Jekyll's ~1000-file build limit, which fails
+          # the Jekyll build for the whole gh-pages site and 404s every
+          # page. Keep this explicit so it is not lost to a future default
+          # change or an unrelated edit to this step.
+          enable_jekyll: false
           commit_message: 'docs: update portal [skip ci]'
           user_name: 'github-actions[bot]'
           user_email: '41898282+github-actions[bot]@users.noreply.github.com'

@@ -52,10 +52,16 @@ cat > "${RUNS_DIR}/index.html" <<EOF
 </html>
 EOF
 
+# Allure history across many runs easily exceeds GitHub Pages' ~1000-file
+# Jekyll build limit, which fails the Jekyll build for the WHOLE gh-pages
+# site (not just this path) and 404s every page, including the docs portal.
+# .nojekyll disables that build entirely so Pages serves files as-is.
+touch "gh-pages-work/.nojekyll"
+
 cd gh-pages-work || exit 1
 git config user.name  "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-git add "${REPORT_BASE_PATH}/"
+git add "${REPORT_BASE_PATH}/" .nojekyll
 git commit -m "report: allure run ${RUN_ID} [skip ci]" \
   || echo "Nothing to commit"
 

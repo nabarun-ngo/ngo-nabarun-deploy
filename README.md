@@ -110,10 +110,22 @@ The release workflows (`reusable-ci-publish`, `reusable-ci-tag-release`,
 `reusable-ci-changeset-check`, `reusable-ci-commit-check`) run in the consumer
 repository, so they cannot see this repo on their own. Each takes a required
 `templates_repository` input (`owner/name`). The job checks that repo out at
-`ext_repo`, copies [`scripts/release_model.py`](scripts/release_model.py) onto
-`PYTHONPATH`, then deletes the checkout so it is not scanned with the consumer's
-packages. `TEMPLATES_TOKEN` must be able to read `templates_repository`.
-`GITHUB_TOKEN` cannot.
+`ext_repo`, copies [`scripts/release_model.py`](scripts/release_model.py) to
+`$RUNNER_TEMP/release-model/release_model.py`, then deletes the checkout so it
+is not scanned with the consumer's packages. `TEMPLATES_TOKEN` must be able to
+read `templates_repository`. `GITHUB_TOKEN` cannot.
+
+Most `run:` steps in those workflows call `release_model.py` directly by path
+(`python3 "$RUNNER_TEMP/release-model/release_model.py" <command> ...`) instead
+of embedding Python in a heredoc, so the only script that ever needs writing or
+reading as a file is the one already covered by
+[`scripts/test_release_model.py`](scripts/test_release_model.py). See
+`release_model.py`'s `build_parser()` for the full command list (`plan`,
+`validate-pr`, `check-pr`, `shift-prerelease`, `skip-if-published`,
+`verify-dist-tag`, `assert-versions`, ...). The one exception is
+`create-tag-release` (a composite action), whose script is resolved via
+`$GITHUB_ACTION_PATH` instead of `$RUNNER_TEMP`, so it imports `release_model`
+as a module over `PYTHONPATH` rather than invoking it as a CLI.
 
 ## Composite actions
 

@@ -65,8 +65,10 @@ jobs:
           chmod +x scripts/validate-manifests.sh
           scripts/validate-manifests.sh config/manifests/ schemas/manifest.v1.schema.json
           echo "::notice::Manifest validation passed"
-          echo "### Manifests" >> "$GITHUB_STEP_SUMMARY"
-          echo "Validation passed for \`config/manifests/\`." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Manifests"
+            echo "Validation passed for \`config/manifests/\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Validate schedule files
         run: |
@@ -81,8 +83,10 @@ jobs:
             check-jsonschema --schemafile schemas/schedules.v1.schema.json "$f"
             echo "::notice::Validated $f"
           done
-          echo "### Schedules" >> "$GITHUB_STEP_SUMMARY"
-          echo "Validation passed for \`config/schedules/\`." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Schedules"
+            echo "Validation passed for \`config/schedules/\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write PR comment on failure
         if: failure() && github.event_name == 'pull_request'

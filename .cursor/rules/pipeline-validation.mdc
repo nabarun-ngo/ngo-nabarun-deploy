@@ -18,3 +18,21 @@ alwaysApply: false
   exercise the failure condition against a temporary copy.
 - Keep CI checks deterministic: use pinned tool/action versions and avoid
   downloading an unversioned `latest` release.
+- A guardrail regex that extracts one field's value from a multi-line YAML
+  `with:` block (e.g. `manifest_name`) must not also match sibling fields on
+  later lines (e.g. `target_environment`, `tag_name`) that happen to look like
+  the first field's expression. Scope the capture to that field's own
+  line/expression; do not key the end-boundary on "next key" when the matched
+  span can itself contain other key-like or value-like text. (Root cause of a
+  real CI failure: the frontend schedule's `target_environment`/`tag_name`
+  values were misread as manifest names.)
+- Guardrail tests must be parameterized (loop + `subTest`), not a single
+  hardcoded fixture. When fixing a guardrail bug, add the exact values that
+  caused the false positive/negative as one case, plus at least one additional
+  case with different values, so the fix is proven general and not just
+  memorized for one literal string.
+- Before claiming "CI passes" or "ready to ship," run every check CI runs that
+  is runnable locally (Python test suites, `validate-workflow-guardrails.py`,
+  `check-jsonschema` per manifest/schedule file, `bash -n` on every changed
+  script) and explicitly name any step you could not run locally (missing
+  `jq`/`shellcheck`/`actionlint` binary) instead of assuming it would pass.

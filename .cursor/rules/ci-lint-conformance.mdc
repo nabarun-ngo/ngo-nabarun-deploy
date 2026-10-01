@@ -1,0 +1,51 @@
+---
+description: actionlint and shellcheck conformance patterns required to keep CI's "Lint workflow YAML" and "Lint shell scripts" jobs green
+globs: "{.github/{workflows,actions}/**/*.yml,.github/actions/**/*.sh,scripts/**/*.sh}"
+alwaysApply: false
+---
+
+# CI lint conformance (actionlint + shellcheck)
+
+These are concrete fixes for real CI failures, kept here so the same class of
+failure is caught before push instead of after a run fails.
+
+- **Group sequential summary/file redirects.** Multiple consecutive
+  `echo ... >> "$GITHUB_STEP_SUMMARY"` (or any other file) lines trip
+  shellcheck SC2129. Write:
+  ```bash
+  {
+    echo "### Title"
+    echo ""
+    echo "line"
+  } >> "$GITHUB_STEP_SUMMARY"
+  ```
+  not one `>>` per line.
+
+- **Guard every segment of a `rm -rf` built from variables.** If a deleted path
+  is assembled as `"${A}/${B}"`, an empty/unset `A` or `B` can collapse it to
+  `/`. Shellcheck SC2115 catches this. Always write
+  `rm -rf "${A:?}/${B:?}"`, not `rm -rf "${A}/${B}"`.
+
+- **Declare every secret a step actually reads, even environment-sourced
+  ones.** actionlint type-checks `secrets.NAME` against the workflow's
+  `on.workflow_call.secrets:` block. If a job binds `environment: <name>` and
+  relies on GitHub's environment-secret exception (the secret is never passed
+  by the caller, only exposed because the job is bound to that GitHub
+  Environment), you must still declare it in `secrets:` as `required: false`
+  with a comment explaining the caller does not map it. See
+  `reusable-deploy-gae-node.yml`, `reusable-deploy-firebase-node.yml`, and
+  `reusable-run-tests-allure.yml` (`DOPPLER_TOKEN`) for the pattern. Do not
+  add a fake `# actionlint-disable-next-line` comment — actionlint has no
+  inline suppression directive, so that silently does nothing and the lint
+  job keeps failing.
+
+- **actionlint runs against every file matching `.github/workflows/*.yml`.**
+  A change to any reusable/called workflow is linted even when no ops
+  (`workflow_dispatch`/`schedule`) workflow changed in the same PR. Don't
+  assume a "backend-only" or "docs-only" change skips this job.
+
+- **Re-check the whole repo for the same pattern, not just the reported
+  line.** When CI reports one instance of SC2129, SC2115, or an undeclared
+  secret, grep every workflow and script for the same shape before pushing
+  the fix — the next CI run will surface the next instance one failure at a
+  time otherwise.

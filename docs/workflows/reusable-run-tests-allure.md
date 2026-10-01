@@ -6,7 +6,7 @@ Checks out the automation repo, runs Cucumber (Maven) in a matrix, publishes an 
 
 Job order: **discover → execute (shards) → report → gate**.
 
-Execute shards bind to a GitHub Environment when `use_gh_env` is true (default). Discover, report, and gate jobs do not. `DOPPLER_TOKEN` is read on the execute job from that environment (it is not a `workflow_call` secret). `PAT` is required for the test-repo checkout. The report job pushes with `GITHUB_TOKEN`.
+Execute shards bind to a GitHub Environment when `use_gh_env` is true (default). Discover, report, and gate jobs do not. `DOPPLER_TOKEN` is declared as an optional `workflow_call` secret, but the caller does not pass it explicitly — the execute job's environment binding exposes the environment-scoped secret of the same name automatically (same pattern as `reusable-deploy-gae-node` and `reusable-deploy-firebase-node`). `PAT` is required for the test-repo checkout. The report job pushes with `GITHUB_TOKEN`.
 
 The test repository must honor `-DSHARD_INDEX` / `-DTOTAL_SHARDS` if you want shards to split work. Feature files are counted only to size the matrix (`{"shard":[1,…,N]}` plus output `total_shards`). Empty `test_repository` fails discover (it must not fall back to this ops repo).
 
@@ -27,9 +27,9 @@ The test repository must honor `-DSHARD_INDEX` / `-DTOTAL_SHARDS` if you want sh
 
 | Secret | Where | Purpose |
 |--------|-------|---------|
-| `PAT` | `workflow_call` | Checkout the test repository |
+| `PAT` | `workflow_call`, caller passes it | Checkout the test repository |
 | `GITHUB_TOKEN` | automatic | Push Allure HTML to `gh-pages` |
-| `DOPPLER_TOKEN` | GitHub Environment on execute | `doppler run` when `doppler_project` is set |
+| `DOPPLER_TOKEN` | `workflow_call` (optional), resolved from the bound GitHub Environment | `doppler run` when `doppler_project` is set |
 
 ## Outputs
 

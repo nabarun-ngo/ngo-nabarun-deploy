@@ -1,123 +1,34 @@
-name: Reusable — CI tag and GitHub Release
+name: Reusable — CI commit check
 
-# workflow_call only. App repos that are not on Changesets.
-# Creates a bare semver tag (no v prefix), then a GitHub Release.
-# version input set: tag exactly that version when the ref is the stable or prerelease branch.
-# version input empty: compute from version_file —
-#   develop: beta from conventional commits (fix=patch, feat=minor, breaking=major).
-#   main: promote the beta line to stable, or bump a hotfix from commits on main.
-# A release commit updates package.json and CHANGELOG.md and contains [skip ci].
-# A tag that already exists on another commit fails the job. Does not deploy or publish to npm.
+# Called by application and library repos on pull_request.
+# Rejects titles that are not fix, feat, feat!, docs, chore, or ci.
+# Does not version, tag, or publish.
 
 on:
   workflow_call:
     inputs:
-      version:
-        description: Explicit version to tag (v prefix optional). Empty computes the version from version_file.
-        type: string
-        required: false
-        default: ''
-      version_file:
-        description: Repo-relative package.json whose version field is the release base when version is empty.
-        type: string
-        required: false
-        default: 'package.json'
-      stable_branch:
-        description: Branch that gets a stable X.Y.Z tag.
-        type: string
-        required: false
-        default: 'main'
-      prerelease_branch:
-        description: Branch that gets the next X.Y.Z-<tag>.N tag.
-        type: string
-        required: false
-        default: 'develop'
-      prerelease_tag:
-        description: Prerelease identifier (alpha, beta, or rc). Must match deploy tag resolution.
-        type: string
-        required: false
-        default: 'beta'
       use_gh_env:
-        description: Bind the job to a GitHub Environment (reviewers / env secrets).
+        description: Bind the job to a GitHub Environment.
         type: boolean
         required: false
         default: false
       gh_env:
-        description: GitHub Environment name when use_gh_env is true (e.g. stage, prod).
+        description: GitHub Environment name when use_gh_env is true.
         type: string
         required: false
         default: ''
 
-    secrets:
-      GH_TOKEN:
-        required: true
-
-    outputs:
-      tag:
-        description: Tag created or already present on this commit.
-        value: ${{ jobs.tag_release.outputs.tag }}
-      created:
-        description: '"true" when this run pushed a new git tag.'
-        value: ${{ jobs.tag_release.outputs.created }}
-      prerelease:
-        description: '"true" when the tag is a prerelease.'
-        value: ${{ jobs.tag_release.outputs.prerelease }}
-      skipped:
-        description: '"true" when the commits do not require a release.'
-        value: ${{ jobs.tag_release.outputs.skipped }}
-
-concurrency:
-  group: tag-release-${{ github.repository }}-${{ github.ref }}
-  cancel-in-progress: false
-
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
 
 jobs:
-  tag_release:
-    name: Tag and GitHub Release
+  commits:
+    name: Validate conventional commits
     runs-on: ubuntu-latest
     environment: ${{ inputs.use_gh_env && inputs.gh_env || '' }}
-    outputs:
-      tag: ${{ steps.release.outputs.tag }}
-      created: ${{ steps.release.outputs.created }}
-      prerelease: ${{ steps.release.outputs.prerelease }}
-      skipped: ${{ steps.release.outputs.skipped }}
 
     steps:
-      - name: Log run context
-        env:
-          LOG_TITLE: Tag and GitHub Release
-          LOG_INPUTS: ${{ toJSON(inputs) }}
-        run: |
-          set -euo pipefail
-          echo "::notice::${LOG_TITLE} — ${GITHUB_EVENT_NAME} ${GITHUB_REF} sha=${GITHUB_SHA:0:7} run=${GITHUB_RUN_ID}"
-          echo "::group::${LOG_TITLE} context"
-          echo "event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF} sha=${GITHUB_SHA}"
-          echo "actor=${GITHUB_ACTOR} run_id=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}"
-          echo "job=${GITHUB_JOB} workflow=${GITHUB_WORKFLOW} repository=${GITHUB_REPOSITORY}"
-          echo "--- inputs ---"
-          echo "${LOG_INPUTS}"
-          echo "::endgroup::"
-          {
-            echo "### ${LOG_TITLE}"
-            echo ""
-            echo "| Field | Value |"
-            echo "|-------|-------|"
-            echo "| Event | \`${GITHUB_EVENT_NAME}\` |"
-            echo "| Ref | \`${GITHUB_REF}\` |"
-            echo "| SHA | \`${GITHUB_SHA}\` |"
-            echo "| Run | [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) |"
-            echo ""
-            echo "<details><summary>inputs</summary>"
-            echo ""
-            echo '```json'
-            echo "${LOG_INPUTS}"
-            echo '```'
-            echo "</details>"
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Require gh_env
         if: ${{ inputs.use_gh_env }}
         env:
@@ -132,8 +43,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          fetch-tags: true
-          token: ${{ secrets.GH_TOKEN }}
 
       - name: Materialize release model
         shell: bash
@@ -581,13 +490,31 @@ jobs:
                   sys.exit(1)
 END_RELEASE_MODEL
 
-      - name: Create git tag and GitHub Release
-        id: release
-        uses: ./.github/actions/create-tag-release
-        with:
-          version: ${{ inputs.version }}
-          version_file: ${{ inputs.version_file }}
-          stable_branch: ${{ inputs.stable_branch }}
-          prerelease_branch: ${{ inputs.prerelease_branch }}
-          prerelease_tag: ${{ inputs.prerelease_tag }}
-          github_token: ${{ secrets.GH_TOKEN }}
+
+      - name: Validate commit titles
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_REF: ${{ github.base_ref }}
+          PYTHONPATH: ${{ runner.temp }}/release-model
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF"
+          python3 - << 'PY'
+          import os, subprocess, sys
+          import release_model
+          base = os.environ["BASE_REF"]
+          log = subprocess.check_output(["git", "log", "--format=%B%x1f", f"origin/{base}..HEAD"], text=True)
+          commits = [item.strip("\n") for item in log.split("\x1f") if item.strip()]
+          errors = release_model.validate_pull_request({
+              "title": os.environ.get("PR_TITLE", ""),
+              "commits": commits,
+              "changesets": [],
+              "packages_changed": False,
+              "skip_changeset": True,
+          })
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+          print("Conventional commit policy passed")
+          PY

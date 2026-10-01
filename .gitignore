@@ -22,6 +22,10 @@ portal-out/
 node_modules/
 npm-debug.log*
 
+# Python validation scripts
+__pycache__/
+*.py[cod]
+
 # Editor
 .vscode/
 .idea/

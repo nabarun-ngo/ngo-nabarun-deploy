@@ -123,6 +123,7 @@ jobs:
           repository: ${{ inputs.test_repository }}
           ref: ${{ inputs.test_branch }}
           token: ${{ secrets.PAT }}
+          path: test-source
 
       - name: Setup Java
         uses: actions/setup-java@v6
@@ -130,9 +131,11 @@ jobs:
           java-version: '17'
           distribution: temurin
           cache: maven
+          cache-dependency-path: test-source/pom.xml
 
       - name: Discover feature files
         id: build_matrix
+        working-directory: test-source
         env:
           TEST_TAGS: ${{ inputs.test_tags }}
           PARALLELISM: ${{ inputs.parallelism }}
@@ -198,6 +201,7 @@ jobs:
           repository: ${{ inputs.test_repository }}
           ref: ${{ inputs.test_branch }}
           token: ${{ secrets.PAT }}
+          path: test-source
 
       - name: Setup Java
         uses: actions/setup-java@v6
@@ -205,6 +209,7 @@ jobs:
           java-version: '17'
           distribution: temurin
           cache: maven
+          cache-dependency-path: test-source/pom.xml
 
       - name: Install Doppler CLI
         if: ${{ inputs.doppler_project != '' }}
@@ -225,6 +230,7 @@ jobs:
         id: mvn_doppler
         if: ${{ inputs.doppler_project != '' }}
         continue-on-error: true
+        working-directory: test-source
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           DOPPLER_PROJECT: ${{ inputs.doppler_project }}
@@ -252,6 +258,7 @@ jobs:
         id: mvn_plain
         if: ${{ inputs.doppler_project == '' }}
         continue-on-error: true
+        working-directory: test-source
         env:
           TEST_TAGS: ${{ inputs.test_tags }}
           SHARD_INDEX: ${{ matrix.shard }}
@@ -284,7 +291,7 @@ jobs:
         if: always()
         with:
           name: allure-results-shard-${{ matrix.shard }}
-          path: allure-results/
+          path: test-source/allure-results/
           retention-days: 1
           if-no-files-found: error
 

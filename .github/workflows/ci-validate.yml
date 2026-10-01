@@ -9,7 +9,7 @@ name: CI — Validate
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, master]
     paths:
       - 'config/manifests/**'
       - 'config/schedules/**'
@@ -19,7 +19,7 @@ on:
       - '.github/actions/**'
 
   push:
-    branches: [main]
+    branches: [main, master]
     paths:
       - 'config/manifests/**'
       - 'config/schedules/**'
@@ -44,6 +44,13 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Validate workflow guardrails
+        run: |
+          python3 scripts/test_workflow_guardrails.py
+          python3 scripts/test_release_model.py
+          python3 scripts/test_release_model_embed.py
+          python3 scripts/validate-workflow-guardrails.py
 
       - name: Install jq and check-jsonschema
         run: |
@@ -104,29 +111,11 @@ jobs:
       - name: Install actionlint
         run: |
           curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash \
-            | bash -s -- latest /usr/local/bin 2>/dev/null \
-            || echo "::warning::actionlint download failed — skipping workflow lint"
+            | bash -s -- 1.7.7 /usr/local/bin
+          actionlint --version
 
       - name: Lint GitHub Actions workflows
-        run: |
-          if command -v actionlint &>/dev/null; then
-            actionlint -color .github/workflows/*.yml
-          else
-            echo "::notice::actionlint not available — basic YAML syntax check only"
-            python3 -c "
-          import yaml, sys, glob
-          errors = []
-          for f in glob.glob('.github/workflows/*.yml'):
-              try:
-                  yaml.safe_load(open(f))
-              except yaml.YAMLError as e:
-                  errors.append(f'{f}: {e}')
-          if errors:
-              for e in errors: print(f'::error::{e}')
-              sys.exit(1)
-          print(f'All {len(glob.glob(\".github/workflows/*.yml\"))} workflow files are valid YAML')
-          "
-          fi
+        run: actionlint -color .github/workflows/*.yml
 
   lint-scripts:
     name: Lint shell scripts
@@ -141,15 +130,11 @@ jobs:
 
       - name: Install shellcheck
         run: |
-          sudo apt-get install -y shellcheck 2>/dev/null || true
-          shellcheck --version 2>/dev/null || echo "::warning::shellcheck not available"
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck --version
 
       - name: Run shellcheck on scripts
         run: |
-          if command -v shellcheck &>/dev/null; then
-            find scripts/ .github/actions/ -name '*.sh' -print0 \
-              | xargs -0 shellcheck --severity=warning \
-              || echo "::warning::Some shellcheck warnings found — review above"
-          else
-            echo "::notice::shellcheck not available — skipping script lint"
-          fi
+          find scripts/ .github/actions/ -name '*.sh' -print0 \
+            | xargs -0 --no-run-if-empty shellcheck --severity=warning

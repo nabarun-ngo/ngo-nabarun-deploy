@@ -1,0 +1,29 @@
+---
+description: Safe checkout rules for workflows that combine the platform and application repositories
+globs: .github/{workflows,actions}/**/*.yml
+alwaysApply: false
+---
+
+# Multi-repository checkout safety
+
+- Treat the GitHub workspace root as owned by the caller repository.
+- Every `actions/checkout` with `repository:` must also set a unique `path:`.
+- Never assume a called reusable workflow can access local actions or config from
+  the repository that defines the workflow. Default checkout retrieves the caller.
+- A reusable workflow intended for external callers must be self-contained, or
+  explicitly check out required platform files into a fixed subdirectory.
+- Keep application source in `app-source/`; run build commands there.
+- Do not use a second root checkout: it can clean or replace platform files.
+- Use manifest/config inputs for repository identity; do not hardcode an unknown
+  platform owner or repository.
+
+Safe pattern:
+
+```yaml
+- uses: actions/checkout@v7
+  with:
+    repository: ${{ inputs.repository }}
+    ref: ${{ inputs.ref }}
+    token: ${{ secrets.PAT }}
+    path: app-source
+```

@@ -87,7 +87,7 @@ Files: `config/manifests/<name>.json`, schema `schemas/manifest.v1.schema.json`.
   },
   "environments": {
     "stage": {
-      "sourceRef": "stage",
+      "sourceRef": "develop",
       "gaeService": "my-app-staging",
       "secrets": { "config": "stg" }
     },
@@ -125,7 +125,7 @@ Do not share `DOPPLER_TOKEN` across environments.
 
 When ops leave `tag_name` empty or `latest`, [resolve-git-ref](../.github/actions/resolve-git-ref/action.yml) picks the highest semver tag that is contained in the target branch (`v` prefix optional):
 
-- `stage` → latest `X.Y.Z-(alpha|beta|rc).N` on that branch. If the branch has no prerelease tag, it falls back to the latest stable tag on that branch.
+- `develop` → latest `X.Y.Z-(alpha|beta|rc).N` on that branch. If the branch has no prerelease tag, it falls back to the latest stable tag on that branch. The stage deployment environment uses this branch.
 - `main` / prod → latest stable `X.Y.Z` on that branch.
 
 Tags that exist only on another branch are ignored.
@@ -152,5 +152,6 @@ Reusable workflows bind jobs with `use_gh_env` / `gh_env` (CI defaults `use_gh_e
 | `workflow_dispatch` | stage | `stage` | Optional |
 | `workflow_dispatch` | prod | `prod` | Required |
 | `repository_dispatch` | stage | `stage` | Optional |
+| `Release-Created` | stage, when the consumer accepts a prerelease | `stage` | Optional |
 | `schedule` | deploy | `stage-scheduled` | Auto |
 | `schedule` | tests | `tests-scheduled` | Auto |

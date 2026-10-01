@@ -5,11 +5,11 @@ Source: [`.github/workflows/reusable-ci-publish.yml`](../../.github/workflows/re
 Reusable **Changesets** pipeline for library repos. Two jobs:
 
 1. **version** — open a Version Packages pull request, or mark the branch ready to publish once prerelease state matches that branch.
-2. **npm** — only on `main` or `stage`, and only when versions are already in git. Runs `prerelease_publish_command` on `stage` and `publish_command` on `main`.
+2. **npm** — only on `main` or `develop`, and only when versions are already in git. Runs `prerelease_publish_command` on `develop` and `publish_command` on `main`. The npm dist-tag is `beta` on `develop` and `latest` on `main`.
 
-Publish readiness follows `.changeset/pre.json`, not the root `package.json` version. A private workspace root with no `version` field can still publish its packages. On `stage`, prerelease mode must be active. On `main`, `pre.json` must be gone, and every public package version must be a stable `X.Y.Z`.
+Publish readiness follows `.changeset/pre.json`, not the root `package.json` version. A private workspace root with no `version` field can still publish its packages. On `develop`, prerelease mode must be active and public versions must look like `2.3.3-beta.1`. Changesets starts the first prerelease at `.0`; this workflow moves that initial version to `.1` in package metadata, changelogs, and lockfiles before opening the review pull request. On `main`, `pre.json` must be gone, and every public package version must be a stable `X.Y.Z`.
 
-The workflow enters Changesets prerelease mode when the first release changeset reaches `stage`. When that line reaches `main` with no changeset files left, it runs `changeset pre exit`, applies the stable versions, and opens the Version Packages pull request itself. `changesets/action` only runs the version command when changeset files are present, so the exit step cannot rely on it.
+The workflow enters Changesets prerelease mode when the first release changeset reaches `develop`. When that line reaches `main` with no changeset files left, it runs `changeset pre exit`, applies the stable versions, and opens the Version Packages pull request itself. `changesets/action` only runs the version command when changeset files are present, so the exit step cannot rely on it.
 
 Runs on one release at a time per branch. Does not create git tags or GitHub Releases. Does not auto-deploy. Does not invent versions from conventional commits. The calling repo must already use Changesets (`.changeset` and `version_command`).
 
@@ -30,7 +30,7 @@ Library repos (for example web-toolkit): npm on. App repos that only need a git 
 | `prerelease_publish_command` | `npm run release:beta` | Prerelease publish command |
 | `manage_prerelease_mode` | `true` | Automatically enter/exit Changesets prerelease mode |
 | `stable_branch` | `main` | Stable release branch |
-| `prerelease_branch` | `stage` | Prerelease branch |
+| `prerelease_branch` | `develop` | Prerelease branch |
 | `prerelease_tag` | `beta` | Changesets prerelease identifier |
 | `version_file` | `package.json` | Path relative to `working_directory`. Recorded when it has a version; not used to decide publish. |
 | `changeset_title` / `changeset_commit` | `chore: version packages` | Version PR |
@@ -41,7 +41,7 @@ Library repos (for example web-toolkit): npm on. App repos that only need a git 
 
 | Secret | Required |
 |--------|----------|
-| `GH_TOKEN` | Always. `secrets.GITHUB_TOKEN` does not start workflows on the Version Packages pull request it opens. Pass a GitHub App token or PAT with `contents: write` and `pull-requests: write` when that pull request must run checks. |
+| `GH_TOKEN` | Always. It creates and updates `changeset-release/develop` or `changeset-release/main` and opens the Version Packages pull request. `secrets.GITHUB_TOKEN` does not start workflows on a pull request it creates, so pass a GitHub App token or PAT with `contents: write` and `pull-requests: write` when required checks must run. |
 | `NPM_TOKEN` | When `publish_to_npm` is true |
 
 ## How the client consumes it
@@ -53,7 +53,7 @@ name: Release
 
 on:
   push:
-    branches: [main, stage]
+    branches: [main, develop]
 
 concurrency:
   group: release-${{ github.ref }}
@@ -75,7 +75,7 @@ jobs:
       publish_command: 'npm run release'
       prerelease_publish_command: 'npm run release:beta'
       stable_branch: main
-      prerelease_branch: stage
+      prerelease_branch: develop
       prerelease_tag: beta
       # use_gh_env: true
       # gh_env: prod
@@ -88,9 +88,11 @@ jobs:
 
 ## Release flow
 
-1. A feature pull request includes a normal Changesets markdown file and merges into `stage`.
-2. The workflow sees the pending changeset, runs `changeset pre enter beta`, and opens a Version Packages pull request containing `.changeset/pre.json` and a version such as `2.3.3-beta.0`.
+1. A feature pull request includes a conventional commit title and a Changeset, then merges into `develop`.
+2. The workflow sees the pending changeset, runs `changeset pre enter beta`, and opens one rolling Version Packages pull request. The first beta in a line is `2.3.3-beta.1`, not `beta.0`.
 3. Merging that Version Packages pull request publishes the committed version with the npm `beta` dist-tag.
-4. Later feature changes repeat the Version Packages flow and increment the prerelease number.
-5. When `stage` reaches `main`, the workflow runs `changeset pre exit` and opens a stable Version Packages pull request, such as `2.3.3`.
-6. Merging the stable Version Packages pull request publishes with npm’s default `latest` dist-tag.
+4. Later feature changes update the same Version Packages pull request until it is merged.
+5. When `develop` reaches `main`, the workflow runs `changeset pre exit` and opens a stable Version Packages pull request, such as `2.3.3`.
+6. Merging the stable Version Packages pull request publishes with the npm `latest` dist-tag.
+
+The version commit does not contain `[skip ci]`. Merging it is the publication trigger, and the publish job does not push another commit. A commit whose versions are already on npm is not published again.

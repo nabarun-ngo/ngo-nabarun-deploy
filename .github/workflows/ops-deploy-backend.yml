@@ -177,8 +177,7 @@ jobs:
       use_gh_env: true
       gh_env: ${{ needs.resolve_env.outputs.gh_env }}
       target_environment: ${{ needs.context.outputs.target_environment }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+    # The called workflow resolves stage/prod credentials from the GitHub
+    # Environment bound to its jobs. Named mappings here would evaluate secrets
+    # before that environment is selected.
+    secrets: inherit

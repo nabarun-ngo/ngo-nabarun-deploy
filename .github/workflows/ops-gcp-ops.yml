@@ -295,7 +295,7 @@ jobs:
                 while IFS=$'\t' read -r VID _ STATUS; do
                   if [[ -z "$VID" ]]; then continue; fi
                   if [[ "$STATUS" == "SERVING" || ( $KEEP_COUNT -lt $KEEP_VERSIONS ) ]]; then
-                    (( KEEP_COUNT++ ))
+                    (( ++KEEP_COUNT ))
                   else
                     DELETABLE+=("$VID")
                   fi
@@ -334,14 +334,14 @@ jobs:
                 echo ""
               } > gcs-cleanup.txt
 
-              echo "$FILES" | while read -r _ FILEPATH; do
+              while read -r _ FILEPATH; do
                 if [[ -z "$FILEPATH" ]]; then continue; fi
                 echo "$FILEPATH" >> gcs-cleanup.txt
                 if [[ "$DRY_RUN" == "false" ]]; then
                   gsutil rm "$FILEPATH" 2>/dev/null || true
                 fi
-                (( COUNT++ )) || true
-              done
+                (( ++COUNT ))
+              done < <(printf '%s\n' "$FILES")
 
               ARTIFACT_NAME="gcs-cleanup-${TARGET_ENV}-${{ github.run_id }}"
               RESULT_SUMMARY="Processed $COUNT file(s) in gs://$STAGING_BUCKET | Dry run: $DRY_RUN"

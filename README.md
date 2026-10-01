@@ -13,9 +13,11 @@ Replace `YOUR_ORG/deploy-platform` in examples with this repository’s `owner/n
 | Workflow | Role | Doc |
 |----------|------|-----|
 | [`reusable-ci-pr-check.yml`](.github/workflows/reusable-ci-pr-check.yml) | PR install, lint, type-check, build, optional tests | [docs/workflows/reusable-ci-pr-check.md](docs/workflows/reusable-ci-pr-check.md) |
+| [`reusable-ci-commit-check.yml`](.github/workflows/reusable-ci-commit-check.yml) | Reject pull requests whose titles are not conventional commits | [docs/workflows/reusable-ci-commit-check.md](docs/workflows/reusable-ci-commit-check.md) |
 | [`reusable-ci-changeset-check.yml`](.github/workflows/reusable-ci-changeset-check.yml) | PR: require a Changeset when `packages/**` changes | [docs/workflows/reusable-ci-changeset-check.md](docs/workflows/reusable-ci-changeset-check.md) |
 | [`reusable-ci-publish.yml`](.github/workflows/reusable-ci-publish.yml) | Changesets version and optional npm publish | [docs/workflows/reusable-ci-publish.md](docs/workflows/reusable-ci-publish.md) |
 | [`reusable-ci-tag-release.yml`](.github/workflows/reusable-ci-tag-release.yml) | App repos: bare semver git tag and GitHub Release | [docs/workflows/reusable-ci-tag-release.md](docs/workflows/reusable-ci-tag-release.md) |
+| [`reusable-ci-release-event.yml`](.github/workflows/reusable-ci-release-event.yml) | App repos: publish a release fact to this repo | [docs/workflows/reusable-ci-release-event.md](docs/workflows/reusable-ci-release-event.md) |
 | [`reusable-setup-context.yml`](.github/workflows/reusable-setup-context.yml) | Normalize dispatch/schedule inputs for deploys | [docs/workflows/reusable-setup-context.md](docs/workflows/reusable-setup-context.md) |
 | [`reusable-deploy-gae-node.yml`](.github/workflows/reusable-deploy-gae-node.yml) | Build, migrate, deploy Node.js to App Engine | [docs/workflows/reusable-deploy-gae-node.md](docs/workflows/reusable-deploy-gae-node.md) |
 | [`reusable-deploy-firebase-node.yml`](.github/workflows/reusable-deploy-firebase-node.yml) | Build and deploy Node.js to Firebase Hosting | [docs/workflows/reusable-deploy-firebase-node.md](docs/workflows/reusable-deploy-firebase-node.md) |
@@ -27,6 +29,7 @@ Replace `YOUR_ORG/deploy-platform` in examples with this repository’s `owner/n
 |----------|------|-----|
 | [`ci-validate.yml`](.github/workflows/ci-validate.yml) | Manifest, workflow, and shell lint on this repo | [docs/workflows/ci-validate.md](docs/workflows/ci-validate.md) |
 | [`ops-deploy-backend.yml`](.github/workflows/ops-deploy-backend.yml) | Manual/dispatch deploy to App Engine | [docs/workflows/ops-deploy-backend.md](docs/workflows/ops-deploy-backend.md) |
+| [`ops-on-release.yml`](.github/workflows/ops-on-release.yml) | Decide whether a published release is deployed | [docs/workflows/ops-on-release.md](docs/workflows/ops-on-release.md) |
 | [`ops-deploy-frontend.yml`](.github/workflows/ops-deploy-frontend.yml) | Manual/schedule deploy to Firebase Hosting | [docs/workflows/ops-deploy-frontend.md](docs/workflows/ops-deploy-frontend.md) |
 | [`ops-run-tests.yml`](.github/workflows/ops-run-tests.yml) | Manual/schedule tests | [docs/workflows/ops-run-tests.md](docs/workflows/ops-run-tests.md) |
 | [`ops-publish-site.yml`](.github/workflows/ops-publish-site.yml) | Publish the docs portal to `gh-pages` | [docs/workflows/ops-publish-site.md](docs/workflows/ops-publish-site.md) |
@@ -48,6 +51,51 @@ Every job starts with a **Log run context** step (or equivalent notices). Open t
 Secrets are never printed. Token presence is logged as `true`/`false` only (for example npm).
 
 For runner-level debug (checkout internals, etc.), set Actions repository variable or secret `ACTIONS_STEP_DEBUG` to `true` on a single run via **Re-run jobs → Enable debug logging**.
+
+## Pipeline guardrails
+
+The validation workflow enforces repository-specific safety policies in addition
+to schema, workflow, and shell linting:
+
+```bash
+python3 scripts/test_workflow_guardrails.py
+python3 scripts/validate-workflow-guardrails.py
+```
+
+The checks reject mutable action branches, external checkouts without a separate
+path, missing workflow permissions, unresolved scheduled manifests, unsafe
+post-increment under `set -e`, caller-side environment credential mapping, and
+destructive cleanup that does not default to dry-run.
+
+## Firebase config templates
+
+| Template | Use |
+|----------|-----|
+| [`firebase.json.tpl`](config/platforms/firebase/firebase.json.tpl) | Static site or SPA with no service worker |
+| [`firebase.pwa.json.tpl`](config/platforms/firebase/firebase.pwa.json.tpl) | SPA that ships a service worker |
+
+Pick the PWA template for any app built with Angular's `serviceWorker` option.
+The plain template marks every `.js` immutable for a year, which would pin
+`ngsw-worker.js` and the registered worker in browsers that already have them —
+no later release would ever reach those users.
+
+The PWA template therefore splits the immutable rule in two and excludes the
+worker filenames from the `.js` half:
+
+```text
+**/*.@(css|woff2|png|jpg|svg|ico)
+**/!(combined-sw|ngsw-worker|OneSignalSDKWorker|safety-worker|worker-basic.min).js
+```
+
+Excluding them is deliberate rather than relying on a later `Cache-Control`
+entry to override an earlier one, because the two approaches fail in opposite
+directions. If this glob is wrong it matches nothing and the bundles merely lose
+their long cache — a performance cost. If an override were wrong, the service
+worker would stay pinned for a year, which is unrecoverable for already-affected
+browsers. The explicit `no-cache` entries that follow are belt-and-braces, so
+the headers are correct whichever way Firebase resolves overlapping rules.
+
+Add a filename here when an app starts shipping another unhashed worker script.
 
 ## Composite actions
 

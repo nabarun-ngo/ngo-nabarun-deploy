@@ -1,0 +1,63 @@
+name: Create tag and GitHub Release
+description: >
+  Plan a bare semver tag from conventional commits, update package.json and
+  CHANGELOG.md, push the tag, and create the GitHub Release.
+  Requires release_model.py on PYTHONPATH from the calling workflow.
+
+inputs:
+  version:
+    description: Explicit version to tag. Empty computes the version.
+    required: false
+    default: ''
+  version_file:
+    description: package.json whose version is the release base.
+    required: false
+    default: 'package.json'
+  stable_branch:
+    description: Branch that gets a stable X.Y.Z tag.
+    required: true
+  prerelease_branch:
+    description: Branch that gets the next prerelease tag.
+    required: true
+  prerelease_tag:
+    description: Prerelease identifier (alpha, beta, or rc).
+    required: true
+  github_token:
+    description: Token that can push the release commit, tag, and GitHub Release.
+    required: true
+
+outputs:
+  tag:
+    description: Tag created or already present on this commit.
+    value: ${{ steps.release.outputs.tag }}
+  created:
+    description: '"true" when this run pushed a new git tag.'
+    value: ${{ steps.release.outputs.created }}
+  prerelease:
+    description: '"true" when the tag is a prerelease.'
+    value: ${{ steps.release.outputs.prerelease }}
+  skipped:
+    description: '"true" when the commits do not require a release.'
+    value: ${{ steps.release.outputs.skipped }}
+
+runs:
+  using: composite
+  steps:
+    - name: Create git tag and GitHub Release
+      id: release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        GH_REPO: ${{ github.repository }}
+        INPUT_VERSION: ${{ inputs.version }}
+        VERSION_FILE: ${{ inputs.version_file }}
+        CURRENT_BRANCH: ${{ github.ref_name }}
+        STABLE_BRANCH: ${{ inputs.stable_branch }}
+        PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
+        PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
+        PYTHONPATH: ${{ runner.temp }}/release-model
+        GIT_AUTHOR_NAME: github-actions[bot]
+        GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        GIT_COMMITTER_NAME: github-actions[bot]
+        GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      run: python3 "$GITHUB_ACTION_PATH/create-tag-release.py"

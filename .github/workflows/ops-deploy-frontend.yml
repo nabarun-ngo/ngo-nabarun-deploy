@@ -20,6 +20,7 @@ on:
         type: choice
         options:
           - fe-public-site
+          - fe-internal-app
       target_environment:
         description: 'Deploy target'
         required: true
@@ -53,7 +54,7 @@ jobs:
     with:
       manifest_name: >-
         ${{
-          github.event_name == 'schedule'        && 'frontend' ||
+          github.event_name == 'schedule'        && 'fe-public-site' ||
           github.event_name == 'workflow_dispatch' && inputs.manifest_name ||
           github.event.client_payload.manifest_name
         }}
@@ -187,8 +188,7 @@ jobs:
       use_gh_env: true
       gh_env: ${{ needs.resolve_env.outputs.gh_env }}
       target_environment: ${{ needs.context.outputs.target_environment }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
-      FB_SA_KEY: ${{ secrets.FB_SA_KEY }}
-      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_FE }}
+    # The called workflow resolves stage/prod credentials from the GitHub
+    # Environment bound to its jobs. Named mappings here would evaluate secrets
+    # before that environment is selected.
+    secrets: inherit

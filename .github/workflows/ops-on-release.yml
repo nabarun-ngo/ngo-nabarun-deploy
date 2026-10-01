@@ -1,0 +1,228 @@
+name: Ops — On Release
+
+# Consumes a release fact from an application repository and decides whether
+# to deploy. The publisher sends repository, tag, prerelease, and ref only.
+# It does not choose a manifest or an environment.
+#
+# Policy:
+#   prerelease tag for a Google App Engine manifest → stage
+#   stable tag → record and leave production manual
+#   unknown repository or non-GAE manifest → record and skip
+
+on:
+  repository_dispatch:
+    types: [Release-Created]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  decide:
+    name: Decide deployment
+    runs-on: ubuntu-latest
+    outputs:
+      action: ${{ steps.policy.outputs.action }}
+      manifest_name: ${{ steps.policy.outputs.manifest_name }}
+      tag_name: ${{ steps.policy.outputs.tag_name }}
+      reason: ${{ steps.policy.outputs.reason }}
+
+    steps:
+      - name: Log run context
+        env:
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          echo "::notice::Release-Created event=${GITHUB_EVENT_NAME} run=${GITHUB_RUN_ID}"
+          echo "::group::Release payload"
+          echo "${PAYLOAD}"
+          echo "::endgroup::"
+
+      - name: Checkout platform repo
+        uses: actions/checkout@v7
+
+      - name: Match release to a manifest
+        id: policy
+        env:
+          PAYLOAD_REPOSITORY: ${{ github.event.client_payload.repository }}
+          PAYLOAD_TAG: ${{ github.event.client_payload.tag_name }}
+          PAYLOAD_PRERELEASE: ${{ github.event.client_payload.prerelease }}
+          PAYLOAD_REF: ${{ github.event.client_payload.ref }}
+        run: |
+          set -euo pipefail
+
+          write_decision() {
+            {
+              echo "action=$1"
+              echo "manifest_name=$2"
+              echo "tag_name=$3"
+              echo "reason=$4"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          if [[ -z "${PAYLOAD_REPOSITORY}" || -z "${PAYLOAD_TAG}" ]]; then
+            echo "::error::Release-Created requires repository and tag_name."
+            exit 1
+          fi
+          if [[ ! "${PAYLOAD_REPOSITORY}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::repository must be owner/name."
+            exit 1
+          fi
+          if [[ ! "$PAYLOAD_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && ! "$PAYLOAD_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[1-9][0-9]*$ ]]; then
+            echo "::error::tag_name must be bare semver, for example 1.4.0 or 1.4.0-beta.1."
+            exit 1
+          fi
+
+          mapfile -t MATCHES < <(jq -r --arg repo "$PAYLOAD_REPOSITORY" 'select(.source.repository == $repo) | input_filename' config/manifests/*.json)
+          COUNT="${#MATCHES[@]}"
+
+          if [[ "$COUNT" -eq 0 ]]; then
+            echo "::notice::No manifest matches ${PAYLOAD_REPOSITORY}. Release recorded and skipped."
+            write_decision skip "" "$PAYLOAD_TAG" "unrecognized repository"
+            exit 0
+          fi
+          if [[ "$COUNT" -gt 1 ]]; then
+            echo "::error::Multiple manifests match ${PAYLOAD_REPOSITORY}."
+            printf '  - %s\n' "${MATCHES[@]}"
+            exit 1
+          fi
+
+          MANIFEST_FILE="${MATCHES[0]}"
+          MANIFEST_NAME="$(basename "$MANIFEST_FILE" .json)"
+          PLATFORM="$(jq -r '.deploy.platform' "$MANIFEST_FILE")"
+          echo "::notice::Matched ${PAYLOAD_REPOSITORY} to ${MANIFEST_NAME} (${PLATFORM}) ref=${PAYLOAD_REF}"
+
+          PRERELEASE_FLAG=false
+          if [[ "${PAYLOAD_PRERELEASE}" == "true" ]]; then
+            PRERELEASE_FLAG=true
+          fi
+          if [[ "$PAYLOAD_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[1-9][0-9]*$ ]]; then
+            TAG_IS_PRERELEASE=true
+          else
+            TAG_IS_PRERELEASE=false
+          fi
+          if [[ "$PRERELEASE_FLAG" != "$TAG_IS_PRERELEASE" ]]; then
+            echo "::error::prerelease '${PAYLOAD_PRERELEASE}' does not match tag '${PAYLOAD_TAG}'."
+            exit 1
+          fi
+
+          if [[ "$TAG_IS_PRERELEASE" != "true" ]]; then
+            echo "::notice::Stable release ${PAYLOAD_TAG} is not deployed automatically."
+            write_decision skip "$MANIFEST_NAME" "$PAYLOAD_TAG" "stable release stays manual"
+            exit 0
+          fi
+          if [[ "$PLATFORM" != "gae" ]]; then
+            echo "::notice::Manifest ${MANIFEST_NAME} uses ${PLATFORM}. Release recorded and skipped."
+            write_decision skip "$MANIFEST_NAME" "$PAYLOAD_TAG" "platform is not auto-deployed"
+            exit 0
+          fi
+
+          echo "::notice::Stage deploy selected for ${MANIFEST_NAME}@${PAYLOAD_TAG}"
+          write_decision deploy "$MANIFEST_NAME" "$PAYLOAD_TAG" "prerelease deploys to stage"
+
+      - name: Write step summary
+        if: always()
+        run: |
+          {
+            echo "### Release decision"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Repository | \`${{ github.event.client_payload.repository }}\` |"
+            echo "| Tag | \`${{ github.event.client_payload.tag_name }}\` |"
+            echo "| Ref | \`${{ github.event.client_payload.ref }}\` |"
+            echo "| Action | \`${{ steps.policy.outputs.action }}\` |"
+            echo "| Manifest | \`${{ steps.policy.outputs.manifest_name }}\` |"
+            echo "| Reason | ${{ steps.policy.outputs.reason }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  manifest:
+    name: Resolve manifest
+    needs: decide
+    if: needs.decide.outputs.action == 'deploy'
+    runs-on: ubuntu-latest
+    outputs:
+      app_name: ${{ steps.resolve.outputs.app_name }}
+      repository: ${{ steps.resolve.outputs.repository }}
+      build_root: ${{ steps.resolve.outputs.build_root }}
+      app_root: ${{ steps.resolve.outputs.app_root }}
+      node_version: ${{ steps.resolve.outputs.node_version }}
+      install_command: ${{ steps.resolve.outputs.install_command }}
+      build_command: ${{ steps.resolve.outputs.build_command }}
+      output_path: ${{ steps.resolve.outputs.output_path }}
+      bundle_includes: ${{ steps.resolve.outputs.bundle_includes }}
+      config_template: ${{ steps.resolve.outputs.config_template }}
+      gae_service: ${{ steps.resolve.outputs.gae_service }}
+      db_migrate: ${{ steps.resolve.outputs.db_migrate }}
+      db_command: ${{ steps.resolve.outputs.db_command }}
+      health_check_enabled: ${{ steps.resolve.outputs.health_check_enabled }}
+      health_check_path: ${{ steps.resolve.outputs.health_check_path }}
+      health_check_url: ${{ steps.resolve.outputs.health_check_url }}
+      doppler_bundle_cli: ${{ steps.resolve.outputs.doppler_bundle_cli }}
+      doppler_project: ${{ steps.resolve.outputs.doppler_project }}
+      doppler_config: ${{ steps.resolve.outputs.doppler_config }}
+
+    steps:
+      - name: Log run context
+        run: |
+          echo "::notice::Resolve manifest ${{ needs.decide.outputs.manifest_name }} for stage"
+
+      - name: Checkout platform repo
+        uses: actions/checkout@v7
+
+      - name: Resolve manifest
+        id: resolve
+        uses: ./.github/actions/resolve-manifest
+        with:
+          manifest_name: ${{ needs.decide.outputs.manifest_name }}
+          target_environment: stage
+
+  resolve_env:
+    name: Resolve GitHub Environment
+    needs: decide
+    if: needs.decide.outputs.action == 'deploy'
+    runs-on: ubuntu-latest
+    outputs:
+      gh_env: ${{ steps.resolve.outputs.gh_env }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v7
+
+      - name: Resolve environment
+        id: resolve
+        uses: ./.github/actions/resolve-deployment-environment
+        with:
+          trigger_type: repository_dispatch
+          target_environment: stage
+          workflow_type: deploy
+
+  deploy:
+    name: Deploy stage
+    needs: [decide, manifest, resolve_env]
+    if: needs.decide.outputs.action == 'deploy'
+    uses: ./.github/workflows/reusable-deploy-gae-node.yml
+    with:
+      app_name: ${{ needs.manifest.outputs.app_name }}
+      repository: ${{ needs.manifest.outputs.repository }}
+      build_root: ${{ needs.manifest.outputs.build_root }}
+      app_root: ${{ needs.manifest.outputs.app_root }}
+      node_version: ${{ needs.manifest.outputs.node_version }}
+      install_command: ${{ needs.manifest.outputs.install_command }}
+      build_command: ${{ needs.manifest.outputs.build_command }}
+      output_path: ${{ needs.manifest.outputs.output_path }}
+      bundle_includes: ${{ needs.manifest.outputs.bundle_includes }}
+      config_template: ${{ needs.manifest.outputs.config_template }}
+      gae_service: ${{ needs.manifest.outputs.gae_service }}
+      db_migrate: ${{ needs.manifest.outputs.db_migrate == 'true' }}
+      db_command: ${{ needs.manifest.outputs.db_command }}
+      health_check_enabled: ${{ needs.manifest.outputs.health_check_enabled == 'true' }}
+      health_check_path: ${{ needs.manifest.outputs.health_check_path }}
+      health_check_url: ${{ needs.manifest.outputs.health_check_url }}
+      doppler_bundle_cli: ${{ needs.manifest.outputs.doppler_bundle_cli == 'true' }}
+      doppler_project: ${{ needs.manifest.outputs.doppler_project }}
+      doppler_config: ${{ needs.manifest.outputs.doppler_config }}
+      ref: ${{ needs.decide.outputs.tag_name }}
+      use_gh_env: true
+      gh_env: ${{ needs.resolve_env.outputs.gh_env }}
+      target_environment: stage
+    secrets: inherit

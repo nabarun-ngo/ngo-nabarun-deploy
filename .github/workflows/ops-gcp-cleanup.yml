@@ -39,7 +39,7 @@ on:
         description: 'Dry run — report but do not delete'
         required: false
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -156,7 +156,7 @@ jobs:
             while IFS=$'\t' read -r VID _ STATUS; do
               [[ -z "$VID" ]] && continue
               if [[ "$STATUS" == "SERVING" || ( "$SERVING_COUNT" -lt "$KEEP_VERSIONS" ) ]]; then
-                (( SERVING_COUNT++ ))
+                (( ++SERVING_COUNT ))
               else
                 TO_DELETE+=("$VID")
               fi

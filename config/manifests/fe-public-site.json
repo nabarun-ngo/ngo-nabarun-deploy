@@ -49,7 +49,7 @@
   },
   "environments": {
     "stage": {
-      "sourceRef": "stage",
+      "sourceRef": "develop",
       "firebaseSite": "ngonabarun-stage",
       "secrets": {
         "config": "stg"

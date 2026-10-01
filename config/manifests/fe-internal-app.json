@@ -1,0 +1,80 @@
+{
+  "$schema": "../../schemas/manifest.v1.schema.json",
+  "$comment": [
+    "Angular internal portal, deployed to its own Firebase Hosting site.",
+    "",
+    "The portal and the public site live in the same repo but deploy",
+    "independently: separate sites means separate release history and separate",
+    "rollback, and neither has to be rebuilt when the other changes. The cost is",
+    "that the two are different origins, so they share no cookies or local",
+    "storage and calls between them are cross-origin.",
+    "",
+    "Because the app owns its site root, nothing in the source needs a base path:",
+    "Auth0 redirects off window.location.origin and the PWA manifest's scope of",
+    "'/' are both already correct.",
+    "",
+    "appRoot is set, so the deploy artifact is staged from appRoot/outputPath and",
+    "Firebase's 'public' dir = outputPath. outputPath follows angular.json, where",
+    "outputPath.base is 'dist/internal' and @angular/build:application nests the",
+    "browser bundle under 'browser/'.",
+    "",
+    "configTemplate is the PWA template rather than the plain one. The plain",
+    "template marks every .js immutable for a year, which would pin the service",
+    "worker and stop any later release from reaching a browser that has already",
+    "registered it. 'ng build' defaults to the production configuration, which",
+    "sets serviceWorker in angular.json, so this app always ships one.",
+    "",
+    "Doppler must supply the app's NG_APP_* values; they are inlined into the",
+    "browser bundle at build time and the build fails to compile on a missing key."
+  ],
+  "apiVersion": "deploy.platform/v1",
+  "kind": "Application",
+  "metadata": {
+    "name": "frontend-internal-app",
+    "description": "Internal Angular portal deployed to Firebase Hosting.",
+    "labels": {
+      "team": "platform",
+      "tier": "frontend"
+    }
+  },
+  "source": {
+    "repository": "nabarun-ngo/ngo-nabarun-fe",
+    "buildRoot": ".",
+    "appRoot": "apps/internal-app"
+  },
+  "build": {
+    "runtime": "node",
+    "nodeVersion": "24",
+    "install": "npm ci",
+    "command": "npm run build --workspace=@nabarun-ngo/internal-app",
+    "outputPath": "dist/internal/browser"
+  },
+  "deploy": {
+    "platform": "firebase",
+    "configTemplate": "config/platforms/firebase/firebase.pwa.json.tpl",
+    "serviceKey": "firebaseSite",
+    "secrets": {
+      "provider": "doppler",
+      "project": "frontend-internal",
+      "bundleCli": false
+    }
+  },
+  "environments": {
+    "stage": {
+      "sourceRef": "develop",
+      "firebaseSite": "ngonabarun-portal-stage",
+      "secrets": {
+        "config": "stg"
+      },
+      "healthCheckUrl": "https://ngonabarun-portal-stage.web.app"
+    },
+    "prod": {
+      "sourceRef": "main",
+      "firebaseSite": "ngonabarun-portal",
+      "secrets": {
+        "config": "prd"
+      },
+      "healthCheckUrl": "https://ngonabarun-portal.web.app"
+    }
+  }
+}

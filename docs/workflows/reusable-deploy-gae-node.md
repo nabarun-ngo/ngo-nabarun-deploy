@@ -8,7 +8,7 @@ Migrate and deploy jobs bind to a GitHub Environment when `use_gh_env` is true (
 
 ## Who calls it
 
-[ops-deploy-backend](ops-deploy-backend.md) in this repo. Application repos do not call this directly.
+[ops-deploy-backend](ops-deploy-backend.md) and, for an accepted prerelease, [ops-on-release](ops-on-release.md). Application repos do not call this directly.
 
 ## Inputs (environment)
 

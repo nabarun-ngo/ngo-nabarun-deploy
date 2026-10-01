@@ -4,26 +4,24 @@ Source: [`.github/workflows/reusable-ci-tag-release.yml`](../../.github/workflow
 
 Reusable **git tag and GitHub Release** pipeline for app repos. It does not use Changesets and it does not publish to npm. Library repos keep using [reusable-ci-publish](reusable-ci-publish.md).
 
-Tags are bare semver (`2.3.3`, `2.3.3-beta.1`) so [resolve-git-ref](../../.github/actions/resolve-git-ref/action.yml) can select them. Resolution only considers tags contained in the target branch. `stage` uses the latest `X.Y.Z-(alpha|beta|rc).N` tag on that branch, and falls back to the latest stable tag on that branch when no prerelease tag is there. `main` and prod use the latest stable `X.Y.Z` tag on that branch.
+Tags are bare semver (`2.3.3`, `2.3.3-beta.1`) so [resolve-git-ref](../../.github/actions/resolve-git-ref/action.yml) can select them. Resolution only considers tags contained in the target branch. `develop` uses the latest `X.Y.Z-(alpha|beta|rc).N` tag on that branch, and falls back to the latest stable tag on that branch when no prerelease tag is there. `main` and prod use the latest stable `X.Y.Z` tag on that branch.
 
 ## Choosing the version
 
-Pass `version` to tag exactly that value. A leading `v` is stripped, so `v2.5.0` tags `2.5.0`. The value must be `X.Y.Z` or `X.Y.Z-(alpha|beta|rc).N`. The ref must still be `main` or `stage`.
+Leave `version` empty to calculate it from merged conventional commits:
 
-Leave `version` empty to compute it from `version_file`:
+| Change on `develop`, current stable `2.3.2` | Tag |
+|---------------------------------------------|-----|
+| `fix:` | `2.3.3-beta.1`, then `2.3.3-beta.2` |
+| `feat:` | `2.4.0-beta.1` |
+| `feat!:` or `BREAKING CHANGE:` | `3.0.0-beta.1` |
+| `docs:`, `chore:`, or `ci:` only | No release |
 
-| Branch | `package.json` version | Tag |
-|--------|------------------------|-----|
-| `stage` | `2.3.2` | `2.3.3-beta.1`, then `2.3.3-beta.2` on the next push |
-| `stage` | `2.3.3-beta.2` and that tag is free | `2.3.3-beta.2` |
-| `main` | `2.3.3` | `2.3.3` |
-| `main` | `2.3.3-beta.2` | Fails. Set a stable `X.Y.Z` first. |
+Merging `develop` into `main` promotes the beta line: `2.3.3-beta.N` becomes `2.3.3`. A hotfix merged to `main` bumps the stable version, then the workflow opens a pull request back into `develop`.
 
-The patch is applied before the prerelease counter. A stable `2.3.2` does not become `2.3.2-beta.1`.
+The release commit updates `package.json` and `CHANGELOG.md`, is tagged once, and includes `[skip ci]`. The tag has no `v` prefix. If that tag already points at another commit, the job fails instead of moving it. `docs:`, `chore:`, and `ci:` commits do not create a release.
 
-A version containing `-` is a GitHub prerelease. Release notes are generated from commits since the previous tag. If this commit already has the tag, the job reuses it. If that tag already points at another commit, the job fails.
-
-This workflow does not write the new version back to `package.json`. Before a stable release, set `package.json` to the stable version (`2.3.3`) and merge that to `main`.
+Pass `version` only for an explicit override. `develop` still accepts only a beta tag, and `main` still accepts only a stable tag.
 
 ## Inputs
 
@@ -32,7 +30,7 @@ This workflow does not write the new version back to `package.json`. Before a st
 | `version` | empty | Explicit version to tag (`v` prefix optional). Empty computes from `version_file` |
 | `version_file` | `package.json` | JSON file whose `version` is the release base when `version` is empty |
 | `stable_branch` | `main` | Branch that tags `X.Y.Z` |
-| `prerelease_branch` | `stage` | Branch that tags `X.Y.Z-<tag>.N` |
+| `prerelease_branch` | `develop` | Branch that tags `X.Y.Z-<tag>.N` |
 | `prerelease_tag` | `beta` | `alpha`, `beta`, or `rc` |
 | `use_gh_env` | `false` | Bind the job to a GitHub Environment |
 | `gh_env` | empty | Environment name when `use_gh_env` is true |
@@ -52,7 +50,7 @@ name: Release
 
 on:
   push:
-    branches: [main, stage]
+    branches: [main, develop]
 
 concurrency:
   group: tag-release-${{ github.ref }}
@@ -60,6 +58,7 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   tag_release:
@@ -67,11 +66,13 @@ jobs:
     with:
       version_file: package.json
       stable_branch: main
-      prerelease_branch: stage
+      prerelease_branch: develop
       prerelease_tag: beta
     secrets:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+When `created` is `true`, chain [reusable-ci-release-event](reusable-ci-release-event.md) to publish a `Release-Created` fact to this repository. That fact does not name a manifest or an environment; [ops-on-release](ops-on-release.md) decides whether it becomes a deployment.
 
 To let an operator tag an exact version by hand, add a dispatch input and forward it. An empty box keeps the computed behavior:
 

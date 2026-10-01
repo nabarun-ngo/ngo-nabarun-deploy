@@ -8,7 +8,7 @@ Lint and type-check are skipped if the npm script is missing.
 
 ## Who calls it
 
-App or package repos on `pull_request` to `main` and `stage`. This repo does not run it for itself.
+App or package repos on `pull_request` to `main` and `develop`. This repo does not run it for itself.
 
 ## Inputs
 
@@ -40,7 +40,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, stage]
+    branches: [main, develop]
     types: [opened, synchronize, reopened]
 
 jobs:
@@ -60,4 +60,4 @@ jobs:
       # gh_env: prod
 ```
 
-Require the **Build check** status on `main` and `stage` in branch protection.
+Require the **Build check** status on `main` and `develop` in branch protection.

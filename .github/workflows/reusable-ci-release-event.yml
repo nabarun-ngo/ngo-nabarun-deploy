@@ -1,0 +1,139 @@
+name: Reusable — CI publish release event
+
+# workflow_call only. Application repos call this after reusable-ci-tag-release
+# reports created=true. It publishes one release fact to the platform repository
+# and nothing else: no manifest, no environment, no deploy instruction.
+# ops-on-release.yml in the platform repository decides what happens next.
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: Bare semver tag that was created (no v prefix).
+        type: string
+        required: true
+      prerelease:
+        description: Whether tag_name is a prerelease. Must agree with the tag.
+        type: boolean
+        required: true
+      platform_repository:
+        description: Platform repository that consumes the event (org/repo).
+        type: string
+        required: false
+        default: 'nabarun-ngo/deploy-platform'
+      event_type:
+        description: repository_dispatch event type to publish.
+        type: string
+        required: false
+        default: 'Release-Created'
+      source_repository:
+        description: Application repository the release belongs to. Empty uses the calling repository.
+        type: string
+        required: false
+        default: ''
+      source_ref:
+        description: Branch the release was created from. Empty uses the calling ref name.
+        type: string
+        required: false
+        default: ''
+
+    secrets:
+      DISPATCH_TOKEN:
+        description: Token allowed to create repository dispatches on platform_repository. GITHUB_TOKEN cannot do this.
+        required: true
+
+    outputs:
+      published:
+        description: '"true" when the event was accepted by the platform repository.'
+        value: ${{ jobs.publish.outputs.published }}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish ${{ inputs.event_type }}
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.dispatch.outputs.published }}
+
+    steps:
+      - name: Log run context
+        env:
+          LOG_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          set -euo pipefail
+          echo "::notice::Publish release event — ${GITHUB_REPOSITORY} ref=${GITHUB_REF_NAME} run=${GITHUB_RUN_ID}"
+          echo "::group::Publish release event context"
+          echo "event=${GITHUB_EVENT_NAME} sha=${GITHUB_SHA} actor=${GITHUB_ACTOR}"
+          echo "${LOG_INPUTS}"
+          echo "::endgroup::"
+
+      - name: Publish release fact
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          PLATFORM_REPOSITORY: ${{ inputs.platform_repository }}
+          EVENT_TYPE: ${{ inputs.event_type }}
+          TAG_NAME: ${{ inputs.tag_name }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::DISPATCH_TOKEN is required to publish ${EVENT_TYPE}."
+            exit 1
+          fi
+          if [[ ! "$PLATFORM_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::platform_repository must be org/repo, got '${PLATFORM_REPOSITORY}'."
+            exit 1
+          fi
+
+          # The consumer rejects a v prefix and any tag that is not bare semver,
+          # so fail here where the message points at the caller.
+          if [[ ! "$TAG_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && ! "$TAG_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[1-9][0-9]*$ ]]; then
+            echo "::error::tag_name must be bare semver, for example 1.4.0 or 1.4.0-beta.1. Got '${TAG_NAME}'."
+            exit 1
+          fi
+          if [[ "$TAG_NAME" == *-* ]]; then
+            TAG_IS_PRERELEASE=true
+          else
+            TAG_IS_PRERELEASE=false
+          fi
+          if [[ "$PRERELEASE" != "$TAG_IS_PRERELEASE" ]]; then
+            echo "::error::prerelease '${PRERELEASE}' does not match tag '${TAG_NAME}'."
+            exit 1
+          fi
+
+          REPOSITORY="${SOURCE_REPOSITORY:-$GITHUB_REPOSITORY}"
+          REF_NAME="${SOURCE_REF:-$GITHUB_REF_NAME}"
+
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${PLATFORM_REPOSITORY}/dispatches" \
+            -f "event_type=${EVENT_TYPE}" \
+            -f "client_payload[repository]=${REPOSITORY}" \
+            -f "client_payload[tag_name]=${TAG_NAME}" \
+            -f "client_payload[prerelease]=${PRERELEASE}" \
+            -f "client_payload[ref]=${REF_NAME}"
+
+          echo "published=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::Published ${EVENT_TYPE} for ${REPOSITORY}@${TAG_NAME} to ${PLATFORM_REPOSITORY}"
+
+      - name: Write step summary
+        if: always()
+        run: |
+          {
+            echo "### Release event"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Event | \`${{ inputs.event_type }}\` |"
+            echo "| Consumer | \`${{ inputs.platform_repository }}\` |"
+            echo "| Repository | \`${{ inputs.source_repository != '' && inputs.source_repository || github.repository }}\` |"
+            echo "| Tag | \`${{ inputs.tag_name }}\` |"
+            echo "| Prerelease | \`${{ inputs.prerelease }}\` |"
+            echo "| Status | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

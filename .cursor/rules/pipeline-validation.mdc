@@ -1,0 +1,20 @@
+---
+description: Required validation and quality gates for workflow, action, manifest, and shell changes
+globs: "{.github/{workflows,actions}/**/*.yml,config/**/*.json,schemas/**/*.json,scripts/**/*}"
+alwaysApply: false
+---
+
+# Pipeline validation
+
+- Run `python scripts/validate-workflow-guardrails.py` after pipeline changes.
+- Run manifest and schedule schema validation after config/schema changes.
+- Run `actionlint` after workflow changes and `shellcheck` after shell changes.
+- Validation must fail on errors; do not downgrade lint failures to warnings.
+- Every workflow must declare explicit top-level `permissions`.
+- Prefer the minimum permission set and elevate only in the job that needs it.
+- New scheduled manifest names must resolve to an existing manifest file.
+- New external checkouts must use a separate `path`.
+- Tests for guardrails must include both a passing and a failing fixture or
+  exercise the failure condition against a temporary copy.
+- Keep CI checks deterministic: use pinned tool/action versions and avoid
+  downloading an unversioned `latest` release.

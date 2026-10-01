@@ -6,11 +6,11 @@ PR gate for **Changesets** library repos. If files matching `packages_filter` ch
 
 Does not version or publish. Pair with [reusable-ci-publish](reusable-ci-publish.md).
 
-Skips PRs authored by `github-actions[bot]` so the Version Packages PR can merge.
+A same-repository pull request from `changeset-release/<base>` is the generated Version Packages pull request. That pull request skips the requirement for another Changeset. Its title is still checked. Feature pull requests are checked regardless of who opens them.
 
 ## Who calls it
 
-Package monorepos (`packages/**`) on `pull_request` to `main` and/or `stage`. Not used by this ops repo. App-only repos usually skip this unless they version with Changesets.
+Package monorepos (`packages/**`) on `pull_request` to `main` and/or `develop`. Not used by this ops repo. App-only repos usually skip this unless they version with Changesets. Application repositories call [reusable-ci-commit-check](reusable-ci-commit-check.md) instead.
 
 ## Inputs
 
@@ -36,7 +36,7 @@ name: Changeset Check
 
 on:
   pull_request:
-    branches: [main, stage]
+    branches: [main, develop]
 
 concurrency:
   group: changeset-check-${{ github.event.pull_request.number }}

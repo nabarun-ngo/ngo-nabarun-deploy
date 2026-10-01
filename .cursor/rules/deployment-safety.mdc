@@ -1,0 +1,24 @@
+---
+description: Production, secret, release, and destructive-operation safety for deployment pipelines
+globs: "{.github/{workflows,actions}/**/*.yml,config/manifests/**/*.json,config/platforms/**/*}"
+alwaysApply: false
+---
+
+# Deployment safety
+
+- Scheduled deployment must never target `prod`; production requires a protected
+  GitHub Environment and deliberate manual dispatch.
+- Scheduled cleanup must default to dry-run and must not silently bypass approval.
+- Resolve cloud credentials inside the job bound to the target Environment.
+  Do not pass stage/prod credentials from an unbound caller job.
+- Never print secret values. Presence checks may only log `true` or `false`.
+- Deploy immutable tags or commit SHAs. Do not deploy a floating branch to prod.
+- GAE must deploy with `--no-promote`, pass a mandatory health check, then promote.
+  Failure to determine a health URL is a failure, not a skipped check.
+- Destructive commands must fail visibly. Do not hide failures with `|| true`
+  unless the operation is explicitly best-effort and reports partial failure.
+- Bash running under `set -e` must use `((++count))`, not `((count++))`.
+- Pin third-party actions to immutable commit SHAs for production workflows;
+  never use `@main`, `@master`, or `@latest`.
+- Any manifest field added to the schema must be wired through resolution,
+  caller inputs, and the execution workflow, or documented as informational.

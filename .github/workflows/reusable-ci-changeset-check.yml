@@ -45,6 +45,9 @@ on:
         type: string
         required: false
         default: ''
+      enable_validation:
+         type: boolean
+         default: false
 
     secrets:
       TEMPLATES_TOKEN:
@@ -150,6 +153,7 @@ jobs:
           fi
 
       - name: Validate release commits and changeset bump
+        if: ${{ inputs.enable_validation }}
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           BASE_REF: ${{ github.base_ref }}

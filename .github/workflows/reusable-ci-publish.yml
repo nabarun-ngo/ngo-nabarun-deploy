@@ -378,7 +378,7 @@ jobs:
 
       - name: Version Packages pull request
         if: ${{ steps.pending.outputs.count != '0' }}
-        uses: changesets/action@v2
+        uses: changesets/action@v3
         with:
           cwd: ${{ inputs.working_directory }}
           version: bash "$RUNNER_TEMP/version-packages.sh"

@@ -28,8 +28,13 @@ BUMP_RANK = {"patch": 1, "minor": 2, "major": 3}
 TYPE_BUMP = {"fix": "patch", "feat": "minor", "docs": None, "chore": None, "ci": None}
 
 
-def parse_commit(message: str) -> dict:
-    """Classify one commit or pull request title."""
+def parse_commit(message: str, default_type: str | None = None) -> dict:
+    """Classify one commit or pull request title.
+
+    When the subject is not a conventional commit and ``default_type`` is
+    given, the commit is still reported as ``valid: False`` (so callers can
+    warn), but it is classified as ``default_type`` instead of having no bump.
+    """
     normalized = message.replace("\r\n", "\n").strip()
     subject = normalized.split("\n", 1)[0].strip()
     if (
@@ -41,7 +46,12 @@ def parse_commit(message: str) -> dict:
         return {"ignored": True, "valid": True, "subject": subject, "bump": None}
     match = COMMIT_RE.fullmatch(subject)
     if not match:
-        return {"ignored": False, "valid": False, "subject": subject, "bump": None}
+        result = {"ignored": False, "valid": False, "subject": subject, "bump": None}
+        if default_type is not None:
+            result["type"] = default_type
+            result["bump"] = TYPE_BUMP[default_type]
+            result["fallback"] = True
+        return result
     breaking = match.group("breaking") == "!" or any(
         line.startswith("BREAKING CHANGE:") or line.startswith("BREAKING-CHANGE:")
         for line in normalized.split("\n")[1:]
@@ -174,10 +184,26 @@ def plan_release(payload: dict) -> dict:
             "commits": [],
         }
 
-    commits = [parse_commit(message) for message in payload.get("commits", [])]
-    invalid = [commit["subject"] for commit in commits if not commit["valid"]]
-    if invalid:
-        raise ValueError("Invalid commit titles: " + "; ".join(invalid))
+    # Commit messages are immutable, so a non-conventional message must not
+    # abort the release. Warn and classify it with a default type instead.
+    default_type = payload.get("default_commit_type", "chore")
+    if default_type not in TYPE_BUMP:
+        raise ValueError(
+            f"default_commit_type must be one of: {', '.join(TYPE_BUMP)}"
+        )
+    commits = [
+        parse_commit(message, default_type=default_type)
+        for message in payload.get("commits", [])
+    ]
+    for commit in commits:
+        if not commit["valid"]:
+            # stderr, because stdout of `plan` is parsed as JSON
+            print(
+                f"::warning::Invalid commit title: '{commit['subject']}' "
+                f"- treating it as '{default_type}'",
+                file=sys.stderr,
+            )
+
     new_bump = highest_bump(commits)
     last_stable = parse_version(payload["last_stable"])
     if last_stable["tag"]:

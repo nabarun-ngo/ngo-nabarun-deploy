@@ -131,29 +131,6 @@ jobs:
       version: ${{ steps.gate.outputs.version }}
 
     steps:
-      - name: Resolve platform checkout
-        id: platform_ref
-        shell: bash
-        env:
-          TEMPLATES_REPOSITORY: ${{ inputs.templates_repository }}
-        run: |
-          set -euo pipefail
-          ref="${GITHUB_WORKFLOW_REF##*@}"
-          repo="${GITHUB_WORKFLOW_REF%@*}"
-          repo="${repo%%/.github/workflows/*}"
-          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
-            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
-            exit 1
-          fi
-          # if [[ -n "${TEMPLATES_REPOSITORY:-}" && "$TEMPLATES_REPOSITORY" != "$repo" ]]; then
-          #   echo "::error::templates_repository (${TEMPLATES_REPOSITORY}) is not the repository that contains this workflow (${repo})."
-          #   exit 1
-          # fi
-          {
-            echo "ref=$ref"
-            echo "repository=$repo"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Require gh_env
         if: ${{ inputs.use_gh_env }}
         env:
@@ -173,8 +150,7 @@ jobs:
       - name: Checkout platform repository
         uses: actions/checkout@v7
         with:
-          repository: ${{ steps.platform_ref.outputs.repository }}
-          ref: ${{ steps.platform_ref.outputs.ref }}
+          repository: ${{ inputs.templates_repository }}
           token: ${{ secrets.TEMPLATES_TOKEN }}
           path: platform
           persist-credentials: false
@@ -369,8 +345,7 @@ jobs:
       - name: Checkout platform repository
         uses: actions/checkout@v7
         with:
-          repository: ${{ steps.platform_ref.outputs.repository }}
-          ref: ${{ steps.platform_ref.outputs.ref }}
+          repository: ${{ inputs.templates_repository }}
           token: ${{ secrets.TEMPLATES_TOKEN }}
           path: platform
           persist-credentials: false

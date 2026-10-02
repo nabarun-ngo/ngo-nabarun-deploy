@@ -70,7 +70,11 @@ jobs:
           INPUT_ENVS: ${{ github.event_name == 'workflow_dispatch' && inputs.environments || 'both' }}
           INPUT_KEEP: ${{ github.event_name == 'workflow_dispatch' && inputs.keep_versions || '2' }}
           INPUT_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.stale_days || '3' }}
-          INPUT_DRY: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          # Scheduled (non-dispatch) runs are always dry-run. Only a manual
+          # dispatch may resolve to 'false', and only by explicitly unticking
+          # dry_run — which an `event == dispatch && inputs.dry_run` form
+          # cannot express, because a false input collapses to the fallback.
+          INPUT_DRY: ${{ github.event_name != 'workflow_dispatch' && 'true' || inputs.dry_run }}
         run: |
           case "$INPUT_ENVS" in
             stage) MATRIX='{"environment":["stage"]}' ;;

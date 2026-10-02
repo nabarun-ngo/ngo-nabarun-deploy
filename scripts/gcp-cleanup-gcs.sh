@@ -23,7 +23,8 @@ STALE_FILES=$(gsutil ls -l "gs://${STAGING_BUCKET}/**" 2>/dev/null \
   | awk -v cutoff="$CUTOFF_DATE" 'NF==3 && $2 < cutoff {print $3}' \
   || echo "")
 
-COUNT=$(echo "$STALE_FILES" | grep -c . || echo 0)
+COUNT=$(printf '%s\n' "$STALE_FILES" | grep -c '[^[:space:]]' || true)
+COUNT=${COUNT:-0}
 echo "| Staging bucket | ${STAGING_BUCKET} | Files older than ${STALE_DAYS}d: ${COUNT} |" >> cleanup-summary.md
 
 if [[ -n "$STALE_FILES" && "$DRY_RUN" == "false" ]]; then

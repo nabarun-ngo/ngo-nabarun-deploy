@@ -46,8 +46,15 @@ on:
         required: false
         default: ''
       enable_validation:
-         type: boolean
-         default: false
+        description: >
+          Run the release-commit and Changeset bump validation step: the
+          conventional pull request title check and the match between the
+          Changeset bump and the commit. Defaults to true so the gate is
+          fail-closed; set it to false only to onboard a repository that
+          cannot satisfy it yet.
+        type: boolean
+        required: false
+        default: true
 
     secrets:
       TEMPLATES_TOKEN:

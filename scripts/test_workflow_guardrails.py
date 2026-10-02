@@ -57,6 +57,32 @@ def _scheduled_deploy_workflow(manifest: str, environment: str, tag: str) -> str
     )
 
 
+def _cleanup_workflow(dry_run_expression: str) -> str:
+    """ops-gcp-cleanup.yml shaped fixture whose matrix job resolves INPUT_DRY
+    from the given expression."""
+    return (
+        "name: Cleanup\n"
+        "permissions:\n"
+        "  contents: read\n"
+        "on:\n"
+        "  schedule:\n"
+        "    - cron: '0 17 * * 1,3,5'\n"
+        "  workflow_dispatch:\n"
+        "    inputs:\n"
+        "      dry_run:\n"
+        "        type: boolean\n"
+        "        default: true\n"
+        "jobs:\n"
+        "  setup:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: Build matrix\n"
+        "        env:\n"
+        "          INPUT_DRY: ${{ " + dry_run_expression + " }}\n"
+        "        run: echo \"$INPUT_DRY\"\n"
+    )
+
+
 class WorkflowGuardrailTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -71,15 +97,10 @@ class WorkflowGuardrailTests(unittest.TestCase):
             "name: CI\npermissions:\n  contents: read\n", encoding="utf-8"
         )
         (workflows / "ops-gcp-cleanup.yml").write_text(
-            "name: Cleanup\n"
-            "permissions:\n"
-            "  contents: read\n"
-            "on:\n"
-            "  workflow_dispatch:\n"
-            "    inputs:\n"
-            "      dry_run:\n"
-            "        type: boolean\n"
-            "        default: true\n",
+            _cleanup_workflow(
+                "github.event_name != 'workflow_dispatch' "
+                "&& 'true' || inputs.dry_run"
+            ),
             encoding="utf-8",
         )
         GUARDRAILS.ROOT = self.root
@@ -110,6 +131,24 @@ class WorkflowGuardrailTests(unittest.TestCase):
         "nabarun-ngo/ngo-nabarun-be",
         "owner-name/some.repo-name",
     )
+
+    def test_rejects_relative_action_in_reusable_workflow(self) -> None:
+        workflow = GUARDRAILS.WORKFLOWS / "reusable-example.yml"
+        workflow.write_text(
+            "name: Reusable\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - uses: ./.github/actions/example\n",
+            encoding="utf-8",
+        )
+        result, output = self.run_guardrails()
+        self.assertEqual(1, result)
+        self.assertIn("platform/ checkout, not uses: ./", output)
+        workflow.unlink()
 
     def test_rejects_external_checkout_without_path(self) -> None:
         for repository in self.EXTERNAL_REPOSITORIES:
@@ -164,6 +203,84 @@ class WorkflowGuardrailTests(unittest.TestCase):
                     f"scheduled manifest '{manifest}' does not exist", output
                 )
                 workflow.unlink()
+
+    # Expressions that keep a scheduled (non-dispatch) cleanup run in dry-run
+    # mode while still letting a manual dispatch opt out.
+    SAFE_DRY_RUN_EXPRESSIONS = (
+        "github.event_name != 'workflow_dispatch' && 'true' || inputs.dry_run",
+        "github.event_name == 'schedule' && 'true' || inputs.dry_run",
+        "github.event_name == 'workflow_dispatch' "
+        "&& inputs.dry_run || github.event_name != 'workflow_dispatch'",
+    )
+
+    def test_accepts_scheduled_dry_run_expressions(self) -> None:
+        workflow = GUARDRAILS.WORKFLOWS / "ops-gcp-cleanup.yml"
+        for expression in self.SAFE_DRY_RUN_EXPRESSIONS:
+            with self.subTest(expression=expression):
+                workflow.write_text(
+                    _cleanup_workflow(expression), encoding="utf-8"
+                )
+                result, output = self.run_guardrails()
+                self.assertEqual(0, result, output)
+
+    # Each of these lets a cron run resolve dry_run to a false-y literal.
+    # The first is the exact expression that shipped the live-deletion bug.
+    UNSAFE_DRY_RUN_EXPRESSIONS = (
+        "github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false'",
+        "github.event_name == 'workflow_dispatch' && 'true' || 'false'",
+        "github.event_name == 'schedule' && inputs.dry_run || 'false'",
+        "github.event_name != 'schedule' && 'true' || ''",
+    )
+
+    def test_rejects_scheduled_dry_run_expressions(self) -> None:
+        workflow = GUARDRAILS.WORKFLOWS / "ops-gcp-cleanup.yml"
+        for expression in self.UNSAFE_DRY_RUN_EXPRESSIONS:
+            with self.subTest(expression=expression):
+                workflow.write_text(
+                    _cleanup_workflow(expression), encoding="utf-8"
+                )
+                result, output = self.run_guardrails()
+                self.assertEqual(1, result)
+                self.assertIn("scheduled cleanup must resolve", output)
+
+    # A dry_run value the checker cannot statically resolve must be reported,
+    # not assumed safe.
+    UNVERIFIABLE_DRY_RUN_EXPRESSIONS = (
+        "github.event_name == 'workflow_dispatch' "
+        "&& inputs.dry_run || vars.CLEANUP_DRY_RUN",
+        "contains(github.event_name, 'dispatch') && inputs.dry_run || 'true'",
+    )
+
+    def test_rejects_unverifiable_scheduled_dry_run(self) -> None:
+        workflow = GUARDRAILS.WORKFLOWS / "ops-gcp-cleanup.yml"
+        for expression in self.UNVERIFIABLE_DRY_RUN_EXPRESSIONS:
+            with self.subTest(expression=expression):
+                workflow.write_text(
+                    _cleanup_workflow(expression), encoding="utf-8"
+                )
+                result, output = self.run_guardrails()
+                self.assertEqual(1, result)
+                self.assertIn("cannot be verified statically", output)
+
+    def test_rejects_missing_scheduled_dry_run_resolution(self) -> None:
+        workflow = GUARDRAILS.WORKFLOWS / "ops-gcp-cleanup.yml"
+        workflow.write_text(
+            "name: Cleanup\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "on:\n"
+            "  schedule:\n"
+            "    - cron: '0 17 * * 1,3,5'\n"
+            "  workflow_dispatch:\n"
+            "    inputs:\n"
+            "      dry_run:\n"
+            "        type: boolean\n"
+            "        default: true\n",
+            encoding="utf-8",
+        )
+        result, output = self.run_guardrails()
+        self.assertEqual(1, result)
+        self.assertIn("no dry_run resolution keyed on github.event_name", output)
 
 
 if __name__ == "__main__":

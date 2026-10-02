@@ -39,6 +39,22 @@ if [[ ! "$PAYLOAD_TAG" =~ $STABLE_PAT && ! "$PAYLOAD_TAG" =~ $PRE_PAT ]]; then
   exit 1
 fi
 
+# Payload self-consistency is checked before any manifest is read: it describes
+# the release itself, so it must fail the same way whatever the repository maps to.
+PRERELEASE_FLAG=false
+if [[ "${PAYLOAD_PRERELEASE}" == "true" ]]; then
+  PRERELEASE_FLAG=true
+fi
+if [[ "$PAYLOAD_TAG" =~ $PRE_PAT ]]; then
+  TAG_IS_PRERELEASE=true
+else
+  TAG_IS_PRERELEASE=false
+fi
+if [[ "$PRERELEASE_FLAG" != "$TAG_IS_PRERELEASE" ]]; then
+  echo "::error::prerelease '${PAYLOAD_PRERELEASE}' does not match tag '${PAYLOAD_TAG}'."
+  exit 1
+fi
+
 shopt -s nullglob
 MANIFEST_FILES=("${MANIFESTS_DIR}"/*.json)
 shopt -u nullglob
@@ -55,30 +71,32 @@ if [[ "$COUNT" -eq 0 ]]; then
   write_decision skip "" "$PAYLOAD_TAG" "unrecognized repository"
   exit 0
 fi
-if [[ "$COUNT" -gt 1 ]]; then
-  echo "::error::Multiple manifests match ${PAYLOAD_REPOSITORY}."
-  printf '  - %s\n' "${MATCHES[@]}"
+# A repository may legitimately own several manifests (one frontend repo builds
+# both frontend apps). The only automatic path is prerelease + App Engine, so
+# ambiguity is only a failure when more than one App Engine manifest matches.
+mapfile -t GAE_MATCHES < <(jq -r --arg repo "$PAYLOAD_REPOSITORY" 'select(.source.repository == $repo and .deploy.platform == "gae") | input_filename' "${MANIFEST_FILES[@]}")
+GAE_COUNT="${#GAE_MATCHES[@]}"
+
+if [[ "$GAE_COUNT" -gt 1 ]]; then
+  echo "::error::Multiple App Engine manifests match ${PAYLOAD_REPOSITORY}; the stage deploy target is ambiguous."
+  printf '  - %s\n' "${GAE_MATCHES[@]}"
   exit 1
 fi
 
-MANIFEST_FILE="${MATCHES[0]}"
+if [[ "$GAE_COUNT" -eq 1 ]]; then
+  MANIFEST_FILE="${GAE_MATCHES[0]}"
+elif [[ "$COUNT" -eq 1 ]]; then
+  MANIFEST_FILE="${MATCHES[0]}"
+else
+  echo "::notice::${COUNT} manifests match ${PAYLOAD_REPOSITORY} and none deploy to App Engine. Release recorded and skipped."
+  printf '  - %s\n' "${MATCHES[@]}"
+  write_decision skip "" "$PAYLOAD_TAG" "no auto-deployed manifest for repository"
+  exit 0
+fi
+
 MANIFEST_NAME="$(basename "$MANIFEST_FILE" .json)"
 PLATFORM="$(jq -r '.deploy.platform' "$MANIFEST_FILE")"
 echo "::notice::Matched ${PAYLOAD_REPOSITORY} to ${MANIFEST_NAME} (${PLATFORM}) ref=${PAYLOAD_REF}"
-
-PRERELEASE_FLAG=false
-if [[ "${PAYLOAD_PRERELEASE}" == "true" ]]; then
-  PRERELEASE_FLAG=true
-fi
-if [[ "$PAYLOAD_TAG" =~ $PRE_PAT ]]; then
-  TAG_IS_PRERELEASE=true
-else
-  TAG_IS_PRERELEASE=false
-fi
-if [[ "$PRERELEASE_FLAG" != "$TAG_IS_PRERELEASE" ]]; then
-  echo "::error::prerelease '${PAYLOAD_PRERELEASE}' does not match tag '${PAYLOAD_TAG}'."
-  exit 1
-fi
 
 if [[ "$TAG_IS_PRERELEASE" != "true" ]]; then
   echo "::notice::Stable release ${PAYLOAD_TAG} is not deployed automatically."

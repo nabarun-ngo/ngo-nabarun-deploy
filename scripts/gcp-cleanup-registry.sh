@@ -35,7 +35,8 @@ while IFS= read -r REPO; do
     --filter="tags=''" \
     --format='value(IMAGE)' 2>/dev/null || echo "")
 
-  COUNT=$(echo "$UNTAGGED" | grep -c . || echo 0)
+  COUNT=$(printf '%s\n' "$UNTAGGED" | grep -c '[^[:space:]]' || true)
+  COUNT=${COUNT:-0}
   echo "| $REPO_PATH | Untagged images: $COUNT |" >> cleanup-summary.md
 
   if [[ -n "$UNTAGGED" && "$DRY_RUN" == "false" ]]; then

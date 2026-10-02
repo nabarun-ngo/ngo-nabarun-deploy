@@ -12,7 +12,8 @@
 # Per-operation environment:
 #   SERVICE_NAME    GAE service for restart-service.
 #   LOG_FILTER / LOG_SEVERITY / LAST_HOURS / LOG_FORMAT   download-logs.
-#   KEEP_VERSIONS   Versions retained by cleanup-versions.
+#   KEEP_VERSIONS   Newest versions retained by cleanup-versions.
+#   STALE_DAYS      Age cutoff in days for cleanup-gcs; newer files are kept.
 #
 # Writes result_summary and (when a report is produced) artifact_name to
 # $GITHUB_OUTPUT. Report files are left in the working directory for upload.
@@ -69,7 +70,8 @@ case "$OPERATION" in
       --project="$GCP_PROJECT_ID" \
       --format='value(version,id)' 2>/dev/null || true)
 
-    BEFORE_COUNT=$(echo "$INSTANCES" | grep -c . || echo 0)
+    BEFORE_COUNT=$(printf '%s\n' "$INSTANCES" | grep -c '[^[:space:]]' || true)
+    BEFORE_COUNT=${BEFORE_COUNT:-0}
 
     if [[ -z "$INSTANCES" ]]; then
       echo "No instances to stop (service may auto-scale to zero)"
@@ -112,7 +114,7 @@ case "$OPERATION" in
     ;;
 
   cleanup-versions)
-    echo "Cleaning up old non-serving GAE versions (keep: $KEEP_VERSIONS)..."
+    echo "Cleaning up old GAE versions without traffic (keep newest: $KEEP_VERSIONS)..."
 
     SERVICES=$(gcloud app services list \
       --project="$GCP_PROJECT_ID" \
@@ -128,17 +130,30 @@ case "$OPERATION" in
     while IFS= read -r SVC; do
       [[ -z "$SVC" ]] && continue
 
+      # traffic_split is the field that identifies the live version;
+      # TRAFFIC_SPLIT/SERVING_STATUS are table column headings, not projection
+      # keys, and resolve to nothing.
       VERSIONS=$(gcloud app versions list \
         --service="$SVC" \
         --project="$GCP_PROJECT_ID" \
-        --format='value(id,TRAFFIC_SPLIT,SERVING_STATUS)' \
+        --format='value(id,traffic_split)' \
         --sort-by='~creationTime' 2>/dev/null)
 
+      # Keep anything serving traffic and the newest KEEP_VERSIONS.
+      POSITION=0
       KEEP_COUNT=0
       DELETABLE=()
-      while IFS=$'\t' read -r VID _ STATUS; do
+      while IFS=$'\t' read -r VID SPLIT; do
         if [[ -z "$VID" ]]; then continue; fi
-        if [[ "$STATUS" == "SERVING" || ( $KEEP_COUNT -lt $KEEP_VERSIONS ) ]]; then
+        (( ++POSITION ))
+        SPLIT="${SPLIT//[[:space:]]/}"
+
+        if [[ ! "$SPLIT" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          echo "::warning::Could not read the traffic split for ${SVC}/${VID}; keeping it."
+          (( ++KEEP_COUNT ))
+        elif [[ ! "$SPLIT" =~ ^0(\.0+)?$ ]]; then
+          (( ++KEEP_COUNT ))
+        elif (( POSITION <= KEEP_VERSIONS )); then
           (( ++KEEP_COUNT ))
         else
           DELETABLE+=("$VID")
@@ -166,14 +181,20 @@ case "$OPERATION" in
     echo "Cleaning stale GCS staging files..."
     STAGING_BUCKET="staging.${GCP_PROJECT_ID}.appspot.com"
 
+    # Age cutoff matching scripts/gcp-cleanup-gcs.sh: the staging blobs of an
+    # in-flight deploy must survive an interactive cleanup.
+    CUTOFF_DATE=$(date -u -d "${STALE_DAYS} days ago" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+      || date -u -v-"${STALE_DAYS}d" '+%Y-%m-%dT%H:%M:%SZ')
+
     FILES=$(gsutil ls -l "gs://${STAGING_BUCKET}/**" 2>/dev/null \
-      | awk 'NF==3 {print $2, $3}' \
+      | awk -v cutoff="$CUTOFF_DATE" 'NF==3 && $2 < cutoff {print $2, $3}' \
       | sort -k1 | head -100 || echo "")
 
     COUNT=0
     {
       echo "# GCS Staging Cleanup"
       echo "Bucket: gs://${STAGING_BUCKET}"
+      echo "Older than: ${STALE_DAYS}d (created before ${CUTOFF_DATE})"
       echo ""
     } > gcs-cleanup.txt
 
@@ -187,7 +208,7 @@ case "$OPERATION" in
     done < <(printf '%s\n' "$FILES")
 
     ARTIFACT_NAME="gcs-cleanup-${TARGET_ENV}-${GITHUB_RUN_ID}"
-    RESULT_SUMMARY="Processed $COUNT file(s) in gs://$STAGING_BUCKET | Dry run: $DRY_RUN"
+    RESULT_SUMMARY="Processed $COUNT file(s) older than ${STALE_DAYS}d in gs://$STAGING_BUCKET | Dry run: $DRY_RUN"
     echo "result_summary=$RESULT_SUMMARY" >> "$GITHUB_OUTPUT"
     echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
     ;;
@@ -213,7 +234,8 @@ case "$OPERATION" in
         --filter="tags=''" \
         --format='value(IMAGE)' 2>/dev/null | head -50 || echo "")
 
-      COUNT=$(echo "$UNTAGGED" | grep -c . || echo 0)
+      COUNT=$(printf '%s\n' "$UNTAGGED" | grep -c '[^[:space:]]' || true)
+      COUNT=${COUNT:-0}
       echo "Repo: $REPO — $COUNT untagged images" | tee -a ar-cleanup.txt
 
       if [[ -n "$UNTAGGED" && "$DRY_RUN" == "false" ]]; then

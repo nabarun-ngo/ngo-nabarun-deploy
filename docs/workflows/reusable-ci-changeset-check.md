@@ -18,16 +18,20 @@ Package monorepos (`packages/**`) on `pull_request` to `main` and/or `develop`. 
 
 | Input | Default | Meaning |
 |-------|---------|---------|
+| `templates_repository` | — (**required**) | Repository holding `scripts/release_model.py`, as `owner/name`. A called workflow runs in the consumer repository, so the consumer passes this |
 | `node_version` | `22` | Node.js |
 | `working_directory` | `.` | Lockfile and `.changeset` directory |
 | `packages_filter` | `packages/**` | Path glob that requires a changeset |
 | `install_command` | `npm ci` | Install before `changeset status` |
 | `use_gh_env` | `false` | Bind the job to a GitHub Environment |
 | `gh_env` | empty | Environment name (required when `use_gh_env` is true) |
+| `enable_validation` | `true` | Run the release-commit and Changeset bump validation step described above. Set to false only to onboard a repository that cannot satisfy it yet |
 
 ## Secrets
 
-None.
+| Secret | Required | Meaning |
+|--------|----------|---------|
+| `TEMPLATES_TOKEN` | yes | Read access to `templates_repository`. `GITHUB_TOKEN` cannot read another repository |
 
 ## How the client consumes it
 

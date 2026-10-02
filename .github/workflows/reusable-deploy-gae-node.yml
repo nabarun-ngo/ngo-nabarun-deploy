@@ -71,9 +71,13 @@ on:
         required: false
         default: ''
       health_check_enabled:
+        description: >
+          Run the mandatory health check between the no-promote deploy and the
+          traffic promotion. Defaults to true so a manifest without a
+          healthCheck block cannot promote an unverified version.
         type: boolean
         required: false
-        default: false
+        default: true
       health_check_path:
         type: string
         required: false
@@ -161,8 +165,31 @@ jobs:
           echo "${LOG_INPUTS}"
           echo "::endgroup::"
 
-      - name: Checkout platform repo (for actions + config)
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout platform repository
         uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
+          token: ${{ github.token }}
+          path: platform
+          persist-credentials: false
 
       - name: Checkout application source
         uses: actions/checkout@v7
@@ -178,18 +205,62 @@ jobs:
           echo "artifact_name=gae-bundle-${{ inputs.app_name }}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
           echo "::notice::artifact_name=gae-bundle-${{ inputs.app_name }}-${{ github.run_id }}"
 
-      - name: Stage deploy bundle
-        uses: ./.github/actions/stage-node-artifact
+      - name: Set up Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@v7
         with:
-          build_root: app-source/${{ inputs.build_root }}
-          app_root: ${{ inputs.app_root != '' && format('app-source/{0}', inputs.app_root) || '' }}
-          install_command: ${{ inputs.install_command }}
-          build_command: ${{ inputs.build_command }}
-          output_path: ${{ inputs.output_path }}
-          bundle_includes: ${{ inputs.bundle_includes }}
-          doppler_bundle_cli: ${{ inputs.doppler_bundle_cli }}
-          artifact_name: ${{ steps.set_artifact.outputs.artifact_name }}
-          node_version: ${{ inputs.node_version }}
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.build_root == '.' && 'app-source/package-lock.json' || format('app-source/{0}/package-lock.json', inputs.build_root) }}
+
+      - name: Install dependencies
+        working-directory: app-source/${{ inputs.build_root }}
+        run: ${{ inputs.install_command }}
+
+      - name: Build application
+        working-directory: app-source/${{ inputs.build_root }}
+        run: ${{ inputs.build_command }}
+
+      - name: Stage deploy bundle
+        id: stage
+        shell: bash
+        env:
+          BUILD_ROOT: app-source/${{ inputs.build_root }}
+          APP_ROOT: ${{ inputs.app_root != '' && format('app-source/{0}', inputs.app_root) || '' }}
+          OUTPUT_PATH: ${{ inputs.output_path }}
+          BUNDLE_INCLUDES: ${{ inputs.bundle_includes }}
+          ARTIFACT_NAME: ${{ steps.set_artifact.outputs.artifact_name }}
+        run: bash platform/.github/actions/stage-node-artifact/stage-bundle.sh
+
+      - name: Download and embed Doppler CLI
+        if: ${{ inputs.doppler_bundle_cli == true }}
+        shell: bash
+        env:
+          BUNDLE_DIR: ${{ steps.stage.outputs.bundle_dir }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$BUNDLE_DIR/bin"
+
+          DOPPLER_VERSION=$(curl -sf "https://api.github.com/repos/DopplerHQ/cli/releases/latest" \
+            | jq -r '.tag_name' | sed 's/^v//')
+
+          echo "Downloading Doppler CLI v${DOPPLER_VERSION}..."
+          curl -fsSL "https://github.com/DopplerHQ/cli/releases/download/${DOPPLER_VERSION}/doppler_${DOPPLER_VERSION}_linux_amd64.tar.gz" \
+            -o /tmp/doppler.tar.gz
+
+          tar -xzf /tmp/doppler.tar.gz -C /tmp doppler
+          mv /tmp/doppler "$BUNDLE_DIR/bin/doppler"
+          chmod +x "$BUNDLE_DIR/bin/doppler"
+
+          echo "::notice::Doppler CLI v${DOPPLER_VERSION} embedded at bin/doppler"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.set_artifact.outputs.artifact_name }}
+          path: __deploy_bundle__/
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Build outcome
         if: always()
@@ -239,8 +310,31 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout platform repo
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout platform repository
         uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
+          token: ${{ github.token }}
+          path: platform
+          persist-credentials: false
 
       - name: Download deploy bundle
         uses: actions/download-artifact@v8
@@ -254,13 +348,14 @@ jobs:
           node-version: ${{ inputs.node_version }}
 
       - name: Run database migration
-        uses: ./.github/actions/run-database-migration
-        with:
-          working_directory: deploy-bundle
-          db_command: ${{ inputs.db_command }}
-          doppler_token: ${{ secrets.DOPPLER_TOKEN }}
-          doppler_project: ${{ inputs.doppler_project }}
-          doppler_config: ${{ inputs.doppler_config != '' && inputs.doppler_config || inputs.target_environment }}
+        shell: bash
+        env:
+          WORK_DIR: deploy-bundle
+          DB_COMMAND: ${{ inputs.db_command }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_PROJECT: ${{ inputs.doppler_project }}
+          DOPPLER_CONFIG: ${{ inputs.doppler_config != '' && inputs.doppler_config || inputs.target_environment }}
+        run: bash platform/.github/actions/run-database-migration/run-database-migration.sh
 
       - name: Write step summary
         if: always()
@@ -315,8 +410,31 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout platform repo
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout platform repository
         uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
+          token: ${{ github.token }}
+          path: platform
+          persist-credentials: false
 
       - name: Download deploy bundle
         uses: actions/download-artifact@v8
@@ -325,11 +443,11 @@ jobs:
           path: deploy-bundle
 
       - name: Render app.yaml from template
-        uses: ./.github/actions/render-config
-        with:
-          template_path: ${{ inputs.config_template }}
-          output_path: deploy-bundle/app.yaml
-          variables: |
+        shell: bash
+        env:
+          TEMPLATE_PATH: platform/${{ inputs.config_template }}
+          OUTPUT_PATH: deploy-bundle/app.yaml
+          EXTRA_VARS: |
             GAE_SERVICE=${{ inputs.gae_service }}
             GAE_INSTANCE_CLASS=${{ inputs.gae_instance_class }}
             GAE_MIN_INSTANCES=${{ inputs.gae_min_instances }}
@@ -337,7 +455,8 @@ jobs:
             DEPLOY_ENV=${{ inputs.target_environment }}
             DOPPLER_PROJECT=${{ inputs.doppler_project }}
             DOPPLER_CONFIG=${{ inputs.doppler_config }}
-          strict: 'false'
+          STRICT: 'false'
+        run: bash platform/.github/actions/render-config/render-template.sh
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
@@ -349,37 +468,41 @@ jobs:
 
       - name: Inject DOPPLER_TOKEN into app.yaml
         if: ${{ inputs.doppler_bundle_cli == true }}
-        uses: ./.github/actions/inject-doppler-token
-        with:
-          working_directory: deploy-bundle
-          doppler_token: ${{ secrets.DOPPLER_TOKEN }}
+        shell: bash
+        env:
+          WORK_DIR: deploy-bundle
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: bash platform/.github/actions/inject-doppler-token/inject-doppler-token.sh
 
       - name: Deploy to GAE (no-promote)
         id: deploy_version
-        uses: ./.github/actions/deploy-gae-version
-        with:
-          working_directory: deploy-bundle
-          gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
-          gae_service: ${{ inputs.gae_service }}
+        shell: bash
+        env:
+          WORK_DIR: deploy-bundle
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GAE_SERVICE: ${{ inputs.gae_service }}
+        run: bash platform/.github/actions/deploy-gae-version/deploy-gae-version.sh
 
       - name: Health check new version
         if: ${{ inputs.health_check_enabled == true }}
-        uses: ./.github/actions/health-check-gae-version
-        with:
-          gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
-          version_id: ${{ steps.deploy_version.outputs.version_id }}
-          gae_service: ${{ inputs.gae_service }}
-          health_check_path: ${{ inputs.health_check_path }}
-          health_check_url: ${{ inputs.health_check_url }}
-          timeout_seconds: '120'
+        shell: bash
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          VERSION_ID: ${{ steps.deploy_version.outputs.version_id }}
+          GAE_SERVICE: ${{ inputs.gae_service }}
+          HC_PATH: ${{ inputs.health_check_path }}
+          HC_URL_OVERRIDE: ${{ inputs.health_check_url }}
+          HC_TIMEOUT: '120'
+        run: bash platform/.github/actions/health-check-gae-version/health-check-gae-version.sh
 
       - name: Promote traffic to new version
         id: promote
-        uses: ./.github/actions/promote-gae-traffic
-        with:
-          gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
-          version_id: ${{ steps.deploy_version.outputs.version_id }}
-          gae_service: ${{ inputs.gae_service }}
+        shell: bash
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          VERSION_ID: ${{ steps.deploy_version.outputs.version_id }}
+          GAE_SERVICE: ${{ inputs.gae_service }}
+        run: bash platform/.github/actions/promote-gae-traffic/promote-gae-traffic.sh
 
       - name: Write step summary
         if: always()

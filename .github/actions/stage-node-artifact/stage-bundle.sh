@@ -61,9 +61,15 @@ if [[ -n "$BUNDLE_INCLUDES" ]]; then
   done
 fi
 
-# Copy start.sh entrypoint from platform config
-if [[ -f "config/platforms/gae/start.sh" ]]; then
-  cp "config/platforms/gae/start.sh" "$BUNDLE_DIR/start.sh"
+# Copy start.sh from the platform checkout. Prefer platform/ so a called
+# workflow uses the ref it was invoked at, then the workspace root for a
+# job that already checked this repository out there.
+START_SH="platform/config/platforms/gae/start.sh"
+if [[ ! -f "$START_SH" ]]; then
+  START_SH="config/platforms/gae/start.sh"
+fi
+if [[ -f "$START_SH" ]]; then
+  cp "$START_SH" "$BUNDLE_DIR/start.sh"
   chmod +x "$BUNDLE_DIR/start.sh"
 fi
 

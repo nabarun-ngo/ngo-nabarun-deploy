@@ -8,6 +8,8 @@ name: Ops — On Release
 #   prerelease tag for a Google App Engine manifest → stage
 #   stable tag → record and leave production manual
 #   unknown repository or non-GAE manifest → record and skip
+#   several matching manifests, none on GAE → record and skip
+#   several matching GAE manifests → fail (ambiguous deploy target)
 
 on:
   repository_dispatch:

@@ -104,29 +104,33 @@ so they can be shellchecked and read on their own.
 | Location | Used by | Notes |
 |----------|---------|-------|
 | [`scripts/`](scripts/) | `ci-validate.yml` and the `ops-*` workflows | Run as `bash scripts/<name>.sh`. The job must check this repository out first. |
-| `.github/actions/<action>/*.sh` | That composite action only | Invoked as `bash "$GITHUB_ACTION_PATH/<name>.sh"`, so it resolves wherever the action is used. |
+| `.github/actions/<action>/*.sh` | Composite actions and reusable workflows | `ops-*` workflows call the action with `uses: ./.github/actions/<action>`. A reusable workflow checks this repository out at `platform/` and runs `bash platform/.github/actions/<action>/<action>.sh`. |
 
-The release workflows (`reusable-ci-publish`, `reusable-ci-tag-release`,
-`reusable-ci-changeset-check`, `reusable-ci-commit-check`) run in the consumer
-repository, so they cannot see this repo on their own. Each takes a required
-`templates_repository` input (`owner/name`). The job checks that repo out at
-`ext_repo`, copies [`scripts/release_model.py`](scripts/release_model.py) to
-`$RUNNER_TEMP/release-model/release_model.py`, then deletes the checkout so it
-is not scanned with the consumer's packages. `TEMPLATES_TOKEN` must be able to
-read `templates_repository`. `GITHUB_TOKEN` cannot.
+Reusable workflows run in the caller repository. `uses: ./.github/actions/...`
+is resolved before any step, so it does not see a `platform/` checkout.
+`uses: ./platform/.github/actions/...` is not a valid substitute. The job
+parses `GITHUB_WORKFLOW_REF` for the repository and ref, checks that
+repository out at `platform/` (after any caller checkout at the workspace
+root), and excludes `platform/` from the caller git tree. `TEMPLATES_TOKEN`
+or another declared secret must be able to read that repository when the
+caller is a different repo. `github.token` is enough when the caller is this
+repository.
 
-Most `run:` steps in those workflows call `release_model.py` directly by path
-(`python3 "$RUNNER_TEMP/release-model/release_model.py" <command> ...`) instead
-of embedding Python in a heredoc, so the only script that ever needs writing or
-reading as a file is the one already covered by
-[`scripts/test_release_model.py`](scripts/test_release_model.py). See
-`release_model.py`'s `build_parser()` for the full command list (`plan`,
+`reusable-ci-publish` and `reusable-ci-tag-release` copy
+[`scripts/release_model.py`](scripts/release_model.py) from `platform/scripts/`
+to `$RUNNER_TEMP/release-model/release_model.py` and leave the checkout in
+place. `reusable-ci-changeset-check` and `reusable-ci-commit-check` still
+check the templates repository out at `ext_repo`, copy the same file, and
+remove that checkout because later steps only read `$RUNNER_TEMP`.
+
+Most of those steps call `release_model.py` as a command
+(`python3 "$RUNNER_TEMP/release-model/release_model.py" <command> ...`).
+`create-tag-release.py` imports `release_model` as a module from `PYTHONPATH`
+and is run as
+`python3 platform/.github/actions/create-tag-release/create-tag-release.py`.
+See `release_model.py`'s `build_parser()` for the command list (`plan`,
 `validate-pr`, `check-pr`, `shift-prerelease`, `skip-if-published`,
-`verify-dist-tag`, `assert-versions`, ...). `create-tag-release` is the one
-action that imports `release_model` as a module: its script is resolved via
-`$GITHUB_ACTION_PATH` and the module is found on `PYTHONPATH`.
-`reusable-ci-publish` uses composite actions the same way. Those scripts still
-invoke `release_model.py` as a command from `$RUNNER_TEMP`.
+`verify-dist-tag`, `assert-versions`, ...).
 
 ## Composite actions
 

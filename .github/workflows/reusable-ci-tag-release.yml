@@ -14,8 +14,8 @@ on:
     inputs:
       templates_repository:
         description: >
-          Templates repository that contains scripts/release_model.py, as owner/name.
-          Required. A called workflow runs in the consumer repository, so the consumer passes this.
+          Repository that contains this workflow and scripts/release_model.py, as owner/name.
+          Required. The job checks that repository out at platform/ using the called workflow ref.
         type: string
         required: true
       version:
@@ -58,7 +58,7 @@ on:
       GH_TOKEN:
         required: true
       TEMPLATES_TOKEN:
-        description: Token with read access to templates_repository.
+        description: Token with read access to the repository that contains this workflow.
         required: true
 
     outputs:
@@ -137,6 +137,29 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        env:
+          TEMPLATES_REPOSITORY: ${{ inputs.templates_repository }}
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          if [[ -n "${TEMPLATES_REPOSITORY:-}" && "$TEMPLATES_REPOSITORY" != "$repo" ]]; then
+            echo "::error::templates_repository (${TEMPLATES_REPOSITORY}) is not the repository that contains this workflow (${repo})."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -144,28 +167,43 @@ jobs:
           fetch-tags: true
           token: ${{ secrets.GH_TOKEN }}
 
-      - name: Checkout templates repository
+      - name: Checkout platform repository
         uses: actions/checkout@v7
         with:
-          repository: ${{ inputs.templates_repository }}
-          path: ext_repo
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
           token: ${{ secrets.TEMPLATES_TOKEN }}
+          path: platform
+          persist-credentials: false
+
+      - name: Keep platform checkout out of the consumer git tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qxF 'platform/' .git/info/exclude || echo 'platform/' >> .git/info/exclude
 
       - name: Stage release model
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/release-model"
-          cp ext_repo/scripts/release_model.py "$RUNNER_TEMP/release-model/release_model.py"
-          rm -rf ext_repo
+          cp platform/scripts/release_model.py "$RUNNER_TEMP/release-model/release_model.py"
 
       - name: Create git tag and GitHub Release
         id: release
-        uses: ./.github/actions/create-tag-release
-        with:
-          version: ${{ inputs.version }}
-          version_file: ${{ inputs.version_file }}
-          stable_branch: ${{ inputs.stable_branch }}
-          prerelease_branch: ${{ inputs.prerelease_branch }}
-          prerelease_tag: ${{ inputs.prerelease_tag }}
-          github_token: ${{ secrets.GH_TOKEN }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          INPUT_VERSION: ${{ inputs.version }}
+          VERSION_FILE: ${{ inputs.version_file }}
+          CURRENT_BRANCH: ${{ github.ref_name }}
+          STABLE_BRANCH: ${{ inputs.stable_branch }}
+          PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
+          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
+          PYTHONPATH: ${{ runner.temp }}/release-model
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: python3 platform/.github/actions/create-tag-release/create-tag-release.py

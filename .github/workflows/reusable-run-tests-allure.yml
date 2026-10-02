@@ -124,6 +124,32 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout platform repository
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
+          token: ${{ github.token }}
+          path: platform
+          persist-credentials: false
+
       - name: Checkout test repository
         uses: actions/checkout@v7
         with:
@@ -142,10 +168,11 @@ jobs:
 
       - name: Discover feature files
         id: build_matrix
-        uses: ./.github/actions/discover-test-features
-        with:
-          working_directory: test-source
-          parallelism: ${{ inputs.parallelism }}
+        shell: bash
+        env:
+          WORK_DIR: test-source
+          PARALLELISM: ${{ inputs.parallelism }}
+        run: bash platform/.github/actions/discover-test-features/discover-test-features.sh
 
   execute:
     name: Test shard ${{ matrix.shard }}/${{ needs.discover.outputs.total_shards }}
@@ -180,6 +207,32 @@ jobs:
             echo "::error::gh_env is required when use_gh_env is true"
             exit 1
           fi
+
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout platform repository
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
+          token: ${{ github.token }}
+          path: platform
+          persist-credentials: false
 
       - name: Checkout test repository
         uses: actions/checkout@v7
@@ -216,30 +269,32 @@ jobs:
         id: mvn_doppler
         if: ${{ inputs.doppler_project != '' }}
         continue-on-error: true
-        uses: ./.github/actions/run-cucumber-shard
-        with:
-          working_directory: test-source
-          use_doppler: 'true'
-          doppler_token: ${{ secrets.DOPPLER_TOKEN }}
-          doppler_project: ${{ inputs.doppler_project }}
-          doppler_config: ${{ inputs.doppler_config }}
-          test_tags: ${{ inputs.test_tags }}
-          shard_index: ${{ matrix.shard }}
-          total_shards: ${{ needs.discover.outputs.total_shards }}
-          target_environment: ${{ inputs.target_environment }}
+        shell: bash
+        env:
+          WORK_DIR: test-source
+          USE_DOPPLER: 'true'
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_PROJECT: ${{ inputs.doppler_project }}
+          DOPPLER_CONFIG: ${{ inputs.doppler_config }}
+          TEST_TAGS: ${{ inputs.test_tags }}
+          SHARD_INDEX: ${{ matrix.shard }}
+          TOTAL_SHARDS: ${{ needs.discover.outputs.total_shards }}
+          TARGET_ENV: ${{ inputs.target_environment }}
+        run: bash platform/.github/actions/run-cucumber-shard/run-cucumber-shard.sh
 
       - name: Run Cucumber tests (without Doppler)
         id: mvn_plain
         if: ${{ inputs.doppler_project == '' }}
         continue-on-error: true
-        uses: ./.github/actions/run-cucumber-shard
-        with:
-          working_directory: test-source
-          use_doppler: 'false'
-          test_tags: ${{ inputs.test_tags }}
-          shard_index: ${{ matrix.shard }}
-          total_shards: ${{ needs.discover.outputs.total_shards }}
-          target_environment: ${{ inputs.target_environment }}
+        shell: bash
+        env:
+          WORK_DIR: test-source
+          USE_DOPPLER: 'false'
+          TEST_TAGS: ${{ inputs.test_tags }}
+          SHARD_INDEX: ${{ matrix.shard }}
+          TOTAL_SHARDS: ${{ needs.discover.outputs.total_shards }}
+          TARGET_ENV: ${{ inputs.target_environment }}
+        run: bash platform/.github/actions/run-cucumber-shard/run-cucumber-shard.sh
 
       - name: Record Maven outcome
         env:
@@ -283,26 +338,117 @@ jobs:
         run: |
           echo "::notice::Publish Allure — execute=${{ needs.execute.result }} title=${{ inputs.report_title }}"
 
-      - name: Checkout platform repo
-        uses: actions/checkout@v7
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Publish Allure report
-        id: publish
-        uses: ./.github/actions/publish-allure
+      - name: Checkout platform repository
+        uses: actions/checkout@v7
         with:
-          report_title: ${{ inputs.report_title }}
-          shard_artifact_prefix: allure-results-shard
-          gh_pages_branch: gh-pages
-          report_base_path: allure-report
-          max_history: '20'
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
+          token: ${{ github.token }}
+          path: platform
+          persist-credentials: false
+
+      - name: Download all Allure result shards
+        uses: actions/download-artifact@v8
+        with:
+          pattern: allure-results-shard-*
+          path: allure-results-raw/
+          merge-multiple: true
+          if-no-files-found: error
+
+      - name: Clone gh-pages and restore Allure history
+        shell: bash
+        env:
+          GH_PAGES_BRANCH: gh-pages
+          REPORT_BASE_PATH: allure-report
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: bash platform/.github/actions/publish-allure/restore-history.sh
+
+      - name: Merge result shards
+        shell: bash
+        env:
+          SERVER_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: bash platform/.github/actions/publish-allure/merge-shards.sh
+
+      - name: Install Allure CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v allure &>/dev/null; then
+            echo "Installing Allure CLI into \$HOME..."
+            curl -fsSL https://github.com/allure-framework/allure2/releases/download/2.27.0/allure-2.27.0.tgz \
+              -o /tmp/allure.tgz
+            mkdir -p "$HOME/allure"
+            tar -xzf /tmp/allure.tgz -C "$HOME/allure"
+            echo "$HOME/allure/allure-2.27.0/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/allure/allure-2.27.0/bin:$PATH"
+          fi
+          allure --version
+
+      - name: Generate Allure HTML report
+        shell: bash
+        env:
+          REPORT_TITLE: ${{ inputs.report_title }}
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/allure/allure-2.27.0/bin:$PATH"
+          allure generate allure-results \
+            --output allure-html \
+            --clean
+          echo "::notice::Allure report generated at allure-html/ (${REPORT_TITLE})"
+
+      - name: Push report to gh-pages
+        id: publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PAGES_BRANCH: gh-pages
+          REPORT_BASE_PATH: allure-report
+          MAX_HISTORY: '20'
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: bash platform/.github/actions/publish-allure/push-report.sh
+
+      - name: Write Allure step summary
+        shell: bash
+        run: |
+          {
+            echo "### Allure Report Published"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Run ID | \`${{ github.run_id }}\` |"
+            echo "| Report URL | [${{ steps.publish.outputs.report_url }}](${{ steps.publish.outputs.report_url }}) |"
+            echo "| Max history kept | 20 runs |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Parse test summary stats
         id: summary
-        uses: ./.github/actions/parse-allure-summary
-        with:
-          test_tags: ${{ inputs.test_tags }}
-          report_url: ${{ steps.publish.outputs.report_url }}
+        shell: bash
+        env:
+          TEST_TAGS: ${{ inputs.test_tags }}
+          REPORT_URL: ${{ steps.publish.outputs.report_url }}
+          SUMMARY_JSON: allure-html/widgets/summary.json
+        run: bash platform/.github/actions/parse-allure-summary/parse-allure-summary.sh
 
   gate:
     name: Test result gate
@@ -313,13 +459,40 @@ jobs:
       tests_passed: ${{ steps.gate.outputs.tests_passed }}
 
     steps:
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout platform repository
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
+          token: ${{ github.token }}
+          path: platform
+          persist-credentials: false
+
       - name: Evaluate gate
         id: gate
-        uses: ./.github/actions/evaluate-test-gate
-        with:
-          discover_result: ${{ needs.discover.result }}
-          execute_result: ${{ needs.execute.result }}
-          report_result: ${{ needs.report.result }}
-          total: ${{ needs.report.outputs.total_tests }}
-          failed: ${{ needs.report.outputs.failed_tests }}
-          broken: ${{ needs.report.outputs.broken_tests }}
+        shell: bash
+        env:
+          DISCOVER_RESULT: ${{ needs.discover.result }}
+          EXECUTE_RESULT: ${{ needs.execute.result }}
+          REPORT_RESULT: ${{ needs.report.result }}
+          TOTAL: ${{ needs.report.outputs.total_tests }}
+          FAILED: ${{ needs.report.outputs.failed_tests }}
+          BROKEN: ${{ needs.report.outputs.broken_tests }}
+        run: bash platform/.github/actions/evaluate-test-gate/evaluate-test-gate.sh

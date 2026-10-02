@@ -238,8 +238,31 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout platform repo
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout platform repository
         uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
+          token: ${{ github.token }}
+          path: platform
+          persist-credentials: false
 
       - name: Download build artifact
         uses: actions/download-artifact@v8
@@ -271,14 +294,15 @@ jobs:
           fi
 
       - name: Render firebase.json from template
-        uses: ./.github/actions/render-config
-        with:
-          template_path: ${{ inputs.config_template }}
-          output_path: app-build/firebase.json
-          variables: |
+        shell: bash
+        env:
+          TEMPLATE_PATH: platform/${{ inputs.config_template }}
+          OUTPUT_PATH: app-build/firebase.json
+          EXTRA_VARS: |
             FB_SITE=${{ steps.resolve_site.outputs.site }}
             BUILD_OUTPUT_PATH=${{ inputs.output_path }}
-          strict: 'false'
+          STRICT: 'false'
+        run: bash platform/.github/actions/render-config/render-template.sh
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3

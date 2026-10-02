@@ -10,14 +10,50 @@ alwaysApply: false
 - Every `actions/checkout` with `repository:` must also set a unique `path:`.
 - Never assume a called reusable workflow can access local actions or config from
   the repository that defines the workflow. Default checkout retrieves the caller.
-- A reusable workflow intended for external callers must be self-contained, or
-  explicitly check out required platform files into a fixed subdirectory.
 - Keep application source in `app-source/`; run build commands there.
 - Do not use a second root checkout: it can clean or replace platform files.
 - Use manifest/config inputs for repository identity; do not hardcode an unknown
   platform owner or repository.
 
-Safe pattern:
+## Reusable workflows and local scripts
+
+`uses:` is resolved from the workflow file's git tree before any step runs.
+`uses: ./.github/actions/...` in a reusable workflow is the caller's tree when
+GitHub resolves it against the caller, and `uses: ./platform/.github/actions/...`
+is never valid: `platform/` does not exist in that git tree.
+
+A reusable workflow that needs a script, template, or config from this
+repository must:
+
+1. Parse the called workflow from `GITHUB_WORKFLOW_REF`
+   (`owner/repo/.github/workflows/file.yml@ref`). The text before
+   `/.github/workflows/` is the repository. The text after `@` is the ref.
+   Do not use `github.sha` or `github.repository`; those are the caller.
+2. Check that repository out with `actions/checkout` at `path: platform`.
+   The token must be able to read that repository. Same-repo callers use
+   `github.token`. External callers use `TEMPLATES_TOKEN` or another secret
+   declared on the workflow. Set `persist-credentials: false`.
+3. Check the caller repository out at the workspace root before the
+   `platform/` checkout. A later root checkout runs `git clean` and deletes
+   `platform/`.
+4. When the caller checkout is a git repository, append `platform/` to
+   `.git/info/exclude` so version commits do not include it.
+5. Run the script from that checkout, for example
+   `bash platform/.github/actions/<name>/<name>.sh`, with the same `env`
+   the composite `action.yml` sets. Keep the workflow step `id` so
+   `GITHUB_OUTPUT` still maps to `steps.<id>.outputs`.
+6. Leave `platform/` in place for the rest of the job. Copy
+   `platform/scripts/release_model.py` to `$RUNNER_TEMP` when a script needs
+   it. Do not delete the checkout before those scripts run.
+7. For a composite action that also runs third-party steps (`setup-node`,
+   `upload-artifact`, `download-artifact`), keep those `uses:` lines in the
+   workflow and point only the local script at `platform/`.
+
+`uses: ./.github/actions/...` is valid only in a workflow that runs in this
+repository (`ops-*.yml`) after that repository is checked out at the workspace
+root.
+
+Safe application checkout:
 
 ```yaml
 - uses: actions/checkout@v7
@@ -26,4 +62,39 @@ Safe pattern:
     ref: ${{ inputs.ref }}
     token: ${{ secrets.PAT }}
     path: app-source
+```
+
+Safe platform checkout inside a reusable workflow:
+
+```yaml
+- name: Resolve platform checkout
+  id: platform_ref
+  shell: bash
+  run: |
+    set -euo pipefail
+    ref="${GITHUB_WORKFLOW_REF##*@}"
+    repo="${GITHUB_WORKFLOW_REF%@*}"
+    repo="${repo%%/.github/workflows/*}"
+    if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+      echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+      exit 1
+    fi
+    {
+      echo "ref=$ref"
+      echo "repository=$repo"
+    } >> "$GITHUB_OUTPUT"
+- name: Checkout platform repository
+  uses: actions/checkout@v7
+  with:
+    repository: ${{ steps.platform_ref.outputs.repository }}
+    ref: ${{ steps.platform_ref.outputs.ref }}
+    token: ${{ github.token }}
+    path: platform
+    persist-credentials: false
+- name: Run the platform script
+  id: example
+  shell: bash
+  env:
+    WORK_DIR: ${{ inputs.working_directory }}
+  run: bash platform/.github/actions/example/example.sh
 ```

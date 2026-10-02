@@ -8,8 +8,9 @@
 # Optional environment:
 #   HC_PATH, HC_URL_OVERRIDE
 #
-# A version URL that cannot be determined skips the check. The caller
-# decides whether this step runs at all.
+# A version URL that cannot be determined is a failure, not a skipped check:
+# traffic is promoted by the next step, so an unverified version must never
+# reach it. The caller decides whether this step runs at all.
 
 set -euo pipefail
 
@@ -24,8 +25,8 @@ else
     --format='value(versionUrl)' 2>/dev/null || true)
 
   if [[ -z "$VERSION_URL" ]]; then
-    echo "::warning::Could not determine versioned URL; skipping health check."
-    exit 0
+    echo "::error::Could not determine the versioned URL for ${GAE_SERVICE}/${VERSION_ID}; refusing to promote an unverified version."
+    exit 1
   fi
 
   HC_URL="${VERSION_URL}${HC_PATH}"

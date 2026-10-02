@@ -9,8 +9,8 @@ name: Ops — GCP Operations Hub
 #   download-logs      — fetch Cloud Logging entries → artifact
 #   restart-service    — stop all running instances for cold restart
 #   view-versions      — list deployed GAE versions with traffic split
-#   cleanup-versions   — delete old non-serving GAE versions (interactive)
-#   cleanup-gcs        — delete stale GCS staging files
+#   cleanup-versions   — delete old GAE versions without traffic (interactive)
+#   cleanup-gcs        — delete GCS staging files older than stale_days
 #   cleanup-registry   — prune untagged Artifact Registry images (on-demand)
 #
 # Operation bodies live in scripts/gcp-ops.sh and scripts/gcp-ops-summary.sh.
@@ -72,6 +72,11 @@ on:
         description: 'GAE versions to keep (for cleanup-versions, default: 2)'
         required: false
         default: '2'
+      stale_days:
+        description: 'Only delete staging files older than N days (for cleanup-gcs, default: 3)'
+        required: false
+        type: number
+        default: 3
       dry_run:
         description: 'Dry run mode for cleanup operations'
         required: false
@@ -171,6 +176,7 @@ jobs:
           LAST_HOURS: ${{ inputs.last_hours }}
           LOG_FORMAT: ${{ inputs.log_format }}
           KEEP_VERSIONS: ${{ inputs.keep_versions }}
+          STALE_DAYS: ${{ inputs.stale_days }}
           DRY_RUN: ${{ inputs.dry_run }}
           TARGET_ENV: ${{ inputs.environment }}
         run: bash scripts/gcp-ops.sh

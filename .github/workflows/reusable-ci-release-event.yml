@@ -39,7 +39,9 @@ on:
 
     secrets:
       DISPATCH_TOKEN:
-        description: Token allowed to create repository dispatches on platform_repository. GITHUB_TOKEN cannot do this.
+        description: >
+          Token that can read the repository containing this workflow and create
+          repository dispatches on platform_repository. The caller GITHUB_TOKEN cannot do this.
         required: true
 
     outputs:
@@ -69,17 +71,44 @@ jobs:
           echo "${LOG_INPUTS}"
           echo "::endgroup::"
 
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout platform repository
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
+          token: ${{ secrets.DISPATCH_TOKEN }}
+          path: platform
+          persist-credentials: false
+
       - name: Publish release fact
         id: dispatch
-        uses: ./.github/actions/publish-release-event
-        with:
-          dispatch_token: ${{ secrets.DISPATCH_TOKEN }}
-          platform_repository: ${{ inputs.platform_repository }}
-          event_type: ${{ inputs.event_type }}
-          tag_name: ${{ inputs.tag_name }}
-          prerelease: ${{ inputs.prerelease }}
-          source_repository: ${{ inputs.source_repository }}
-          source_ref: ${{ inputs.source_ref }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          PLATFORM_REPOSITORY: ${{ inputs.platform_repository }}
+          EVENT_TYPE: ${{ inputs.event_type }}
+          TAG_NAME: ${{ inputs.tag_name }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: bash platform/.github/actions/publish-release-event/publish-release-event.sh
 
       - name: Write step summary
         if: always()

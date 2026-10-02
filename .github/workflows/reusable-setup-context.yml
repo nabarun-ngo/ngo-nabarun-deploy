@@ -80,18 +80,45 @@ jobs:
           echo "${LOG_INPUTS}"
           echo "::endgroup::"
 
+      - name: Resolve platform checkout
+        id: platform_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_WORKFLOW_REF##*@}"
+          repo="${GITHUB_WORKFLOW_REF%@*}"
+          repo="${repo%%/.github/workflows/*}"
+          if [[ -z "$ref" || -z "$repo" || "$repo" == "$GITHUB_WORKFLOW_REF" ]]; then
+            echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
+            exit 1
+          fi
+          {
+            echo "ref=$ref"
+            echo "repository=$repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout platform repository
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.platform_ref.outputs.repository }}
+          ref: ${{ steps.platform_ref.outputs.ref }}
+          token: ${{ github.token }}
+          path: platform
+          persist-credentials: false
+
       - name: Resolve context
         id: ctx
-        uses: ./.github/actions/resolve-workflow-context
-        with:
-          event_name: ${{ github.event_name }}
-          manifest_name: ${{ inputs.manifest_name }}
-          target_environment: ${{ inputs.target_environment }}
-          tag_name: ${{ inputs.tag_name }}
-          workflow_type: ${{ inputs.workflow_type }}
-          dispatch_manifest: ${{ github.event.client_payload.manifest_name }}
-          dispatch_tag: ${{ github.event.client_payload.tag_name }}
-          dispatch_environment: ${{ github.event.client_payload.target_environment }}
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MANIFEST: ${{ inputs.manifest_name }}
+          INPUT_TARGET_ENV: ${{ inputs.target_environment }}
+          INPUT_TAG: ${{ inputs.tag_name }}
+          INPUT_WORKFLOW_TYPE: ${{ inputs.workflow_type }}
+          DISPATCH_MANIFEST: ${{ github.event.client_payload.manifest_name }}
+          DISPATCH_TAG: ${{ github.event.client_payload.tag_name }}
+          DISPATCH_ENV: ${{ github.event.client_payload.target_environment }}
+        run: bash platform/.github/actions/resolve-workflow-context/resolve-workflow-context.sh
 
       - name: Write step summary
         shell: bash

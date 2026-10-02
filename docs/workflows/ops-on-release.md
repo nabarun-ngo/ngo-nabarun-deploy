@@ -24,7 +24,13 @@ There is no `manifest_name` and no `target_environment`. This repository matches
 | Prerelease tag for a Google App Engine manifest | Deploy that tag to stage |
 | Stable tag | Record it and skip. Production stays a manual run of [ops-deploy-backend](ops-deploy-backend.md) |
 | Repository with no manifest, or a non-GAE manifest | Record it and skip |
-| `prerelease` does not match the tag, or several manifests share the repository | Fail |
+| Repository matching several manifests, none of them App Engine | Record it and skip; no manifest name is reported |
+| `prerelease` does not match the tag | Fail |
+| Several App Engine manifests share the repository | Fail |
+
+One repository may own several manifests — `ngo-nabarun-fe` builds both frontend apps. Because the only automatic path is a prerelease tag on an App Engine manifest, the match is narrowed to App Engine manifests first, and sharing a repository is only ambiguous when more than one of them deploys to App Engine. A repository with exactly one App Engine manifest resolves to it even when other manifests on another platform share the repository.
+
+The `prerelease`/tag agreement check runs before any manifest is read, so a malformed payload fails the same way regardless of which manifests match.
 
 Stage deploy uses [reusable-deploy-gae-node](reusable-deploy-gae-node.md) and the GitHub Environment `stage`. [Trigger-Deploy-Backend](ops-deploy-backend.md) remains the explicit deploy request, including every production deploy.
 

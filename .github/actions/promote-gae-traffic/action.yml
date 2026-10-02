@@ -1,0 +1,30 @@
+name: Promote GAE Traffic
+description: Send all traffic for an App Engine service to one version.
+
+inputs:
+  gcp_project_id:
+    description: Google Cloud project id.
+    required: true
+  version_id:
+    description: App Engine version that receives traffic.
+    required: true
+  gae_service:
+    description: App Engine service name.
+    required: true
+
+outputs:
+  deploy_url:
+    description: Public URL of the service after promotion.
+    value: ${{ steps.promote.outputs.deploy_url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Promote traffic to new version
+      id: promote
+      shell: bash
+      env:
+        GCP_PROJECT_ID: ${{ inputs.gcp_project_id }}
+        VERSION_ID: ${{ inputs.version_id }}
+        GAE_SERVICE: ${{ inputs.gae_service }}
+      run: bash "$GITHUB_ACTION_PATH/promote-gae-traffic.sh"

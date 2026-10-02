@@ -4,6 +4,7 @@
 # Step body for .github/actions/upload-npm-logs/action.yml.
 #
 # Runs without -e on purpose: diagnostics must survive a broken npm install.
+# Does not print npm config, which can contain registry credentials.
 # Writes everything under $RUNNER_TEMP/npm-debug.
 
 set +e
@@ -26,9 +27,6 @@ echo "=== npm diagnostics ==="
   echo "Repository: ${GITHUB_REPOSITORY}"
   echo "Run ID: ${GITHUB_RUN_ID}"
   echo "Run attempt: ${GITHUB_RUN_ATTEMPT}"
-  echo ""
-  echo "=== npm configuration ==="
-  npm config list 2>&1
   echo ""
   echo "=== npm cache contents ==="
   ls -la "${NPM_CACHE}" 2>&1 || true

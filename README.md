@@ -122,10 +122,11 @@ reading as a file is the one already covered by
 [`scripts/test_release_model.py`](scripts/test_release_model.py). See
 `release_model.py`'s `build_parser()` for the full command list (`plan`,
 `validate-pr`, `check-pr`, `shift-prerelease`, `skip-if-published`,
-`verify-dist-tag`, `assert-versions`, ...). The one exception is
-`create-tag-release` (a composite action), whose script is resolved via
-`$GITHUB_ACTION_PATH` instead of `$RUNNER_TEMP`, so it imports `release_model`
-as a module over `PYTHONPATH` rather than invoking it as a CLI.
+`verify-dist-tag`, `assert-versions`, ...). `create-tag-release` is the one
+action that imports `release_model` as a module: its script is resolved via
+`$GITHUB_ACTION_PATH` and the module is found on `PYTHONPATH`.
+`reusable-ci-publish` uses composite actions the same way. Those scripts still
+invoke `release_model.py` as a command from `$RUNNER_TEMP`.
 
 ## Composite actions
 
@@ -133,6 +134,26 @@ Building blocks used by the reusables (not called from app repos directly):
 
 | Action | Purpose |
 |--------|---------|
+| [decide-release-deployment](.github/actions/decide-release-deployment/action.yml) | Match a `Release-Created` event to a manifest and decide deploy or skip |
+| [log-run-context](.github/actions/log-run-context/action.yml) | Print run context and a step summary |
+| [stage-version-command](.github/actions/stage-version-command/action.yml) | Stage the Changesets version script |
+| [inspect-pending-changesets](.github/actions/inspect-pending-changesets/action.yml) | Count pending changeset files |
+| [configure-changesets-prerelease](.github/actions/configure-changesets-prerelease/action.yml) | Enter or exit Changesets prerelease mode |
+| [open-version-packages-pr](.github/actions/open-version-packages-pr/action.yml) | Open the Version Packages pull request after a prerelease exit |
+| [decide-publish-ready](.github/actions/decide-publish-ready/action.yml) | Decide whether versions are already in git and safe to publish |
+| [publish-npm-packages](.github/actions/publish-npm-packages/action.yml) | Publish with the stable or prerelease command |
+| [publish-release-event](.github/actions/publish-release-event/action.yml) | Validate a bare semver tag and publish the release fact |
+| [run-database-migration](.github/actions/run-database-migration/action.yml) | Run the migration command, through Doppler when the bundle has it |
+| [inject-doppler-token](.github/actions/inject-doppler-token/action.yml) | Write the Doppler token into the ephemeral app.yaml |
+| [deploy-gae-version](.github/actions/deploy-gae-version/action.yml) | Deploy App Engine with `--no-promote` |
+| [health-check-gae-version](.github/actions/health-check-gae-version/action.yml) | Poll the new version until it returns HTTP 200 |
+| [promote-gae-traffic](.github/actions/promote-gae-traffic/action.yml) | Send all service traffic to the new version |
+| [resolve-workflow-context](.github/actions/resolve-workflow-context/action.yml) | Resolve trigger, manifest, environment, and tag |
+| [discover-test-features](.github/actions/discover-test-features/action.yml) | Count feature files and build the shard matrix |
+| [run-cucumber-shard](.github/actions/run-cucumber-shard/action.yml) | Run one Cucumber shard, with Doppler when configured |
+| [parse-allure-summary](.github/actions/parse-allure-summary/action.yml) | Read Allure summary counts |
+| [evaluate-test-gate](.github/actions/evaluate-test-gate/action.yml) | Fail the run unless the test counts are clean |
+| [upload-npm-logs](.github/actions/upload-npm-logs/action.yml) | Collect npm debug logs on failure and upload them |
 | [resolve-git-ref](.github/actions/resolve-git-ref/action.yml) | Resolve `latest` or an explicit tag (`v` prefix optional) |
 | [resolve-manifest](.github/actions/resolve-manifest/action.yml) | Load a manifest for an environment |
 | [resolve-deployment-environment](.github/actions/resolve-deployment-environment/action.yml) | Map trigger to GitHub Environment |

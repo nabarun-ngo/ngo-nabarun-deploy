@@ -1,0 +1,33 @@
+name: Discover Test Features
+description: >
+  Count Cucumber feature files and build a shard matrix for parallel execution.
+
+inputs:
+  working_directory:
+    description: Directory to search for .feature files.
+    required: true
+  parallelism:
+    description: Maximum number of shards.
+    required: true
+
+outputs:
+  matrix:
+    description: JSON matrix of shard indexes, for example {"shard":[1,2,3]}.
+    value: ${{ steps.discover.outputs.matrix }}
+  feature_count:
+    description: Number of feature files found.
+    value: ${{ steps.discover.outputs.feature_count }}
+  total_shards:
+    description: Shard count after clamping to the feature count.
+    value: ${{ steps.discover.outputs.total_shards }}
+
+runs:
+  using: composite
+  steps:
+    - name: Discover feature files
+      id: discover
+      shell: bash
+      env:
+        WORK_DIR: ${{ inputs.working_directory }}
+        PARALLELISM: ${{ inputs.parallelism }}
+      run: bash "$GITHUB_ACTION_PATH/discover-test-features.sh"

@@ -19,7 +19,7 @@ runs:
       run: bash "$GITHUB_ACTION_PATH/collect-diagnostics.sh"
 
     - name: Upload npm logs
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ runner.temp }}/npm-debug/**

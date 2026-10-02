@@ -1,0 +1,22 @@
+name: Inspect Pending Changesets
+description: Count changeset markdown files, ignoring the Changesets README.
+
+inputs:
+  working_directory:
+    description: Directory that contains .changeset, relative to the workspace.
+    required: true
+
+outputs:
+  count:
+    description: Number of pending changeset files.
+    value: ${{ steps.inspect.outputs.count }}
+
+runs:
+  using: composite
+  steps:
+    - name: Inspect pending changesets
+      id: inspect
+      shell: bash
+      env:
+        WORK_DIR: ${{ inputs.working_directory }}
+      run: bash "$GITHUB_ACTION_PATH/inspect-pending-changesets.sh"

@@ -1,0 +1,73 @@
+name: Resolve Workflow Context
+description: >
+  Resolve trigger type, manifest, environment, tag, and approval mode
+  from workflow_dispatch, repository_dispatch, or schedule.
+
+inputs:
+  event_name:
+    description: github.event_name.
+    required: true
+  manifest_name:
+    description: Manifest name from the workflow input.
+    required: false
+    default: ''
+  target_environment:
+    description: Logical environment from the workflow input.
+    required: false
+    default: ''
+  tag_name:
+    description: Tag from the workflow input.
+    required: false
+    default: ''
+  workflow_type:
+    description: '"deploy" or "tests".'
+    required: true
+  dispatch_manifest:
+    description: manifest_name from a repository_dispatch payload.
+    required: false
+    default: ''
+  dispatch_tag:
+    description: tag_name from a repository_dispatch payload.
+    required: false
+    default: ''
+  dispatch_environment:
+    description: target_environment from a repository_dispatch payload.
+    required: false
+    default: ''
+
+outputs:
+  trigger_type:
+    description: schedule, workflow_dispatch, or repository_dispatch.
+    value: ${{ steps.ctx.outputs.trigger_type }}
+  manifest_name:
+    description: Resolved manifest name.
+    value: ${{ steps.ctx.outputs.manifest_name }}
+  target_environment:
+    description: Resolved logical environment.
+    value: ${{ steps.ctx.outputs.target_environment }}
+  tag_name:
+    description: Resolved tag name.
+    value: ${{ steps.ctx.outputs.tag_name }}
+  approval_mode:
+    description: '"auto" for schedule, "manual" otherwise.'
+    value: ${{ steps.ctx.outputs.approval_mode }}
+  workflow_type:
+    description: '"deploy" or "tests".'
+    value: ${{ steps.ctx.outputs.workflow_type }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve context
+      id: ctx
+      shell: bash
+      env:
+        EVENT_NAME: ${{ inputs.event_name }}
+        INPUT_MANIFEST: ${{ inputs.manifest_name }}
+        INPUT_TARGET_ENV: ${{ inputs.target_environment }}
+        INPUT_TAG: ${{ inputs.tag_name }}
+        INPUT_WORKFLOW_TYPE: ${{ inputs.workflow_type }}
+        DISPATCH_MANIFEST: ${{ inputs.dispatch_manifest }}
+        DISPATCH_TAG: ${{ inputs.dispatch_tag }}
+        DISPATCH_ENV: ${{ inputs.dispatch_environment }}
+      run: bash "$GITHUB_ACTION_PATH/resolve-workflow-context.sh"

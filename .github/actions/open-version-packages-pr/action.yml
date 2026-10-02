@@ -1,0 +1,48 @@
+name: Open Version Packages Pull Request
+description: >
+  Run the staged version script for a prerelease exit and open or update the
+  Version Packages pull request. Requires $RUNNER_TEMP/version-packages.sh
+  and release_model.py already staged.
+
+inputs:
+  working_directory:
+    description: Directory Changesets runs in, relative to the workspace.
+    required: true
+  github_token:
+    description: Token that can push the version branch and open the pull request.
+    required: true
+  current_branch:
+    description: Base branch for the Version Packages pull request.
+    required: true
+  version_command:
+    description: Command the staged version script runs.
+    required: true
+  pr_title:
+    description: Pull request title.
+    required: true
+  pr_commit:
+    description: Commit message for the version bump.
+    required: true
+  prerelease_tag:
+    description: Changesets prerelease tag passed to the version script.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Open Version Packages pull request
+      shell: bash
+      env:
+        WORK_DIR: ${{ inputs.working_directory }}
+        GH_TOKEN: ${{ inputs.github_token }}
+        GH_REPO: ${{ github.repository }}
+        CURRENT_BRANCH: ${{ inputs.current_branch }}
+        VERSION_COMMAND: ${{ inputs.version_command }}
+        PR_TITLE: ${{ inputs.pr_title }}
+        PR_COMMIT: ${{ inputs.pr_commit }}
+        PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
+        GIT_AUTHOR_NAME: github-actions[bot]
+        GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        GIT_COMMITTER_NAME: github-actions[bot]
+        GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      run: bash "$GITHUB_ACTION_PATH/open-version-packages-pr.sh"

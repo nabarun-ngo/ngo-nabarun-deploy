@@ -1,0 +1,12 @@
+name: Stage Version Command
+description: >
+  Copy the Changesets version script to $RUNNER_TEMP/version-packages.sh.
+  The script reads VERSION_COMMAND and PRERELEASE_TAG from the environment
+  of the step that runs it.
+
+runs:
+  using: composite
+  steps:
+    - name: Stage version command
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/stage-version-command.sh"

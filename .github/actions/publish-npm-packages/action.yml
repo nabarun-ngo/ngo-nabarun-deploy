@@ -1,0 +1,48 @@
+name: Publish npm Packages
+description: >
+  Publish from the prerelease branch with the prerelease dist-tag, or from
+  the stable branch with latest. Skips when every package version is already
+  on npm. Requires release_model.py staged at $RUNNER_TEMP/release-model.
+
+inputs:
+  working_directory:
+    description: Directory the publish command runs in, relative to the workspace.
+    required: true
+  npm_token:
+    description: Token for the npm registry. Passed to npm as NODE_AUTH_TOKEN.
+    required: true
+  current_branch:
+    description: Branch this run is on.
+    required: true
+  stable_branch:
+    description: Branch that publishes stable versions.
+    required: true
+  prerelease_branch:
+    description: Branch that publishes prerelease versions.
+    required: true
+  stable_command:
+    description: Command used on the stable branch.
+    required: true
+  prerelease_command:
+    description: Command used on the prerelease branch.
+    required: true
+  prerelease_tag:
+    description: npm dist-tag for the prerelease branch.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Publish packages
+      shell: bash
+      env:
+        WORK_DIR: ${{ inputs.working_directory }}
+        NODE_AUTH_TOKEN: ${{ inputs.npm_token }}
+        NPM_TOKEN: ${{ inputs.npm_token }}
+        CURRENT_BRANCH: ${{ inputs.current_branch }}
+        STABLE_BRANCH: ${{ inputs.stable_branch }}
+        PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
+        STABLE_COMMAND: ${{ inputs.stable_command }}
+        PRERELEASE_COMMAND: ${{ inputs.prerelease_command }}
+        PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
+      run: bash "$GITHUB_ACTION_PATH/publish-npm-packages.sh"

@@ -1,0 +1,42 @@
+name: Health Check GAE Version
+description: >
+  Poll the new App Engine version until it returns HTTP 200.
+  A missing version URL skips the check. The workflow runs this step
+  only when health_check_enabled is true.
+
+inputs:
+  gcp_project_id:
+    description: Google Cloud project id.
+    required: true
+  version_id:
+    description: App Engine version to check.
+    required: true
+  gae_service:
+    description: App Engine service name.
+    required: true
+  health_check_path:
+    description: Path appended to the version URL when health_check_url is empty.
+    required: false
+    default: /health
+  health_check_url:
+    description: Full URL to check. Empty derives the version URL from App Engine.
+    required: false
+    default: ''
+  timeout_seconds:
+    description: Seconds to wait for HTTP 200.
+    required: false
+    default: '120'
+
+runs:
+  using: composite
+  steps:
+    - name: Health check new version
+      shell: bash
+      env:
+        GCP_PROJECT_ID: ${{ inputs.gcp_project_id }}
+        VERSION_ID: ${{ inputs.version_id }}
+        GAE_SERVICE: ${{ inputs.gae_service }}
+        HC_PATH: ${{ inputs.health_check_path }}
+        HC_URL_OVERRIDE: ${{ inputs.health_check_url }}
+        HC_TIMEOUT: ${{ inputs.timeout_seconds }}
+      run: bash "$GITHUB_ACTION_PATH/health-check-gae-version.sh"

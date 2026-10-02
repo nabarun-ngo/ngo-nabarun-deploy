@@ -1,0 +1,47 @@
+name: Evaluate Test Gate
+description: >
+  Fail unless discover, execute, and report succeeded and the Allure
+  counts show tests that are neither failed nor broken.
+
+inputs:
+  discover_result:
+    description: Result of the discover job.
+    required: true
+  execute_result:
+    description: Result of the execute job.
+    required: true
+  report_result:
+    description: Result of the report job.
+    required: true
+  total:
+    description: Total tests recorded by the report job.
+    required: false
+    default: '0'
+  failed:
+    description: Failed tests recorded by the report job.
+    required: false
+    default: '0'
+  broken:
+    description: Broken tests recorded by the report job.
+    required: false
+    default: '0'
+
+outputs:
+  tests_passed:
+    description: '"true" when every check passed.'
+    value: ${{ steps.gate.outputs.tests_passed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Evaluate gate
+      id: gate
+      shell: bash
+      env:
+        DISCOVER_RESULT: ${{ inputs.discover_result }}
+        EXECUTE_RESULT: ${{ inputs.execute_result }}
+        REPORT_RESULT: ${{ inputs.report_result }}
+        TOTAL: ${{ inputs.total }}
+        FAILED: ${{ inputs.failed }}
+        BROKEN: ${{ inputs.broken }}
+      run: bash "$GITHUB_ACTION_PATH/evaluate-test-gate.sh"

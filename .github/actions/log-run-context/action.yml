@@ -1,0 +1,63 @@
+name: Log Run Context
+description: >
+  Print the run context for a job and append a step summary.
+  variant "version" records the event, ref, and inputs.
+  variant "publish" records the npm publish fields.
+
+inputs:
+  title:
+    description: Heading used in the notice, log group, and summary.
+    required: true
+  inputs_json:
+    description: JSON object of workflow inputs.
+    required: true
+  extra:
+    description: Extra lines printed inside the log group.
+    required: false
+    default: ''
+  variant:
+    description: '"version" or "publish".'
+    required: false
+    default: version
+  version:
+    description: Version shown in the publish summary.
+    required: false
+    default: ''
+  branch:
+    description: Branch shown in the publish summary.
+    required: false
+    default: ''
+  stable_command:
+    description: Stable publish command shown in the publish summary.
+    required: false
+    default: ''
+  prerelease_command:
+    description: Prerelease publish command shown in the publish summary.
+    required: false
+    default: ''
+  npm_token_present:
+    description: '"true" or "false". Presence only; never the token.'
+    required: false
+    default: ''
+  job_status:
+    description: Job status shown in the publish summary.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Log run context
+      shell: bash
+      env:
+        LOG_TITLE: ${{ inputs.title }}
+        LOG_INPUTS: ${{ inputs.inputs_json }}
+        LOG_EXTRA: ${{ inputs.extra }}
+        LOG_VARIANT: ${{ inputs.variant }}
+        PUBLISH_VERSION: ${{ inputs.version }}
+        PUBLISH_BRANCH: ${{ inputs.branch }}
+        STABLE_COMMAND: ${{ inputs.stable_command }}
+        PRERELEASE_COMMAND: ${{ inputs.prerelease_command }}
+        NPM_TOKEN_PRESENT: ${{ inputs.npm_token_present }}
+        JOB_STATUS: ${{ inputs.job_status }}
+      run: bash "$GITHUB_ACTION_PATH/log-run-context.sh"

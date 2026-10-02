@@ -1,0 +1,64 @@
+name: Decide Publish Ready
+description: >
+  Decide whether a Changesets repository is ready to publish.
+  Pending changesets or a prerelease transition leave version_ready false.
+  A stable branch that still has pre.json fails the step.
+
+inputs:
+  working_directory:
+    description: Directory that contains .changeset, relative to the workspace.
+    required: true
+  version_file:
+    description: package.json relative to working_directory. Recorded when it has a semver.
+    required: true
+  current_branch:
+    description: Branch this run is on.
+    required: true
+  ref_type:
+    description: github.ref_type. Must be branch.
+    required: true
+  stable_branch:
+    description: Branch that publishes stable versions.
+    required: true
+  prerelease_branch:
+    description: Branch that publishes prerelease versions.
+    required: true
+  prerelease_tag:
+    description: Changesets prerelease tag.
+    required: true
+  manage_prerelease:
+    description: '"true" when this workflow owns prerelease mode.'
+    required: true
+  pending:
+    description: Pending changeset count from earlier in the job.
+    required: true
+  pre_transition:
+    description: Prerelease transition from earlier in the job (enter, exit, or none).
+    required: true
+
+outputs:
+  version_ready:
+    description: '"true" when no release changes remain and prerelease state matches the branch.'
+    value: ${{ steps.gate.outputs.version_ready }}
+  version:
+    description: Semver from version_file when that file has one. Empty otherwise.
+    value: ${{ steps.gate.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Decide if version is ready
+      id: gate
+      shell: bash
+      env:
+        WORK_DIR: ${{ inputs.working_directory }}
+        VERSION_FILE: ${{ inputs.version_file }}
+        CURRENT_BRANCH: ${{ inputs.current_branch }}
+        REF_TYPE: ${{ inputs.ref_type }}
+        STABLE_BRANCH: ${{ inputs.stable_branch }}
+        PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
+        PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
+        MANAGE_PRERELEASE: ${{ inputs.manage_prerelease }}
+        PENDING: ${{ inputs.pending }}
+        PRE_TRANSITION: ${{ inputs.pre_transition }}
+      run: bash "$GITHUB_ACTION_PATH/decide-publish-ready.sh"

@@ -1,0 +1,37 @@
+name: Run Database Migration
+description: >
+  Run db_command in the deploy bundle. Uses the bundled Doppler CLI when
+  the binary and a token are both present.
+
+inputs:
+  working_directory:
+    description: Directory that contains the deploy bundle.
+    required: true
+  db_command:
+    description: Migration command, for example "npx prisma migrate deploy".
+    required: true
+  doppler_token:
+    description: Doppler token. Empty runs the command with the ambient environment.
+    required: false
+    default: ''
+  doppler_project:
+    description: Doppler project passed to the bundled CLI.
+    required: false
+    default: ''
+  doppler_config:
+    description: Doppler config passed to the bundled CLI.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Run database migration
+      shell: bash
+      env:
+        WORK_DIR: ${{ inputs.working_directory }}
+        DB_COMMAND: ${{ inputs.db_command }}
+        DOPPLER_TOKEN: ${{ inputs.doppler_token }}
+        DOPPLER_PROJECT: ${{ inputs.doppler_project }}
+        DOPPLER_CONFIG: ${{ inputs.doppler_config }}
+      run: bash "$GITHUB_ACTION_PATH/run-database-migration.sh"

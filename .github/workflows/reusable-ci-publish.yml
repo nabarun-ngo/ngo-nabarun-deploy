@@ -132,47 +132,11 @@ jobs:
 
     steps:
       - name: Log run context
-        env:
-          LOG_TITLE: Version
-          LOG_INPUTS: ${{ toJSON(inputs) }}
-        run: |
-          set -euo pipefail
-          echo "::notice::${LOG_TITLE} — ${GITHUB_EVENT_NAME} ${GITHUB_REF} sha=${GITHUB_SHA:0:7} run=${GITHUB_RUN_ID}"
-          echo "::group::${LOG_TITLE} context"
-          cat <<EOF
-          event=${GITHUB_EVENT_NAME}
-          ref=${GITHUB_REF}
-          sha=${GITHUB_SHA}
-          actor=${GITHUB_ACTOR}
-          run_id=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}
-          job=${GITHUB_JOB}
-          workflow=${GITHUB_WORKFLOW}
-          repository=${GITHUB_REPOSITORY}
-          runner=${RUNNER_OS}/${RUNNER_ARCH}
-          run_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-          --- inputs ---
-          ${LOG_INPUTS}
-          EOF
-          [[ -n "${LOG_EXTRA:-}" ]] && { echo "--- extra ---"; echo "${LOG_EXTRA}"; }
-          echo "::endgroup::"
-          {
-            echo "### ${LOG_TITLE}"
-            echo ""
-            echo "| Field | Value |"
-            echo "|-------|-------|"
-            echo "| Event | \`${GITHUB_EVENT_NAME}\` |"
-            echo "| Ref | \`${GITHUB_REF}\` |"
-            echo "| SHA | \`${GITHUB_SHA}\` |"
-            echo "| Job | \`${GITHUB_JOB}\` |"
-            echo "| Run | [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) |"
-            echo ""
-            echo "<details><summary>inputs</summary>"
-            echo ""
-            echo '```json'
-            echo "${LOG_INPUTS}"
-            echo '```'
-            echo "</details>"
-          } >> "$GITHUB_STEP_SUMMARY"
+        uses: ./.github/actions/log-run-context
+        with:
+          title: Version
+          inputs_json: ${{ toJSON(inputs) }}
+          variant: version
 
       - name: Require gh_env
         if: ${{ inputs.use_gh_env }}
@@ -205,18 +169,8 @@ jobs:
           cp ext_repo/scripts/release_model.py "$RUNNER_TEMP/release-model/release_model.py"
           rm -rf ext_repo
 
-      - name: Write version command
-        env:
-          VERSION_COMMAND: ${{ inputs.version_command }}
-          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
-        run: |
-          cat > "$RUNNER_TEMP/version-packages.sh" << 'EOF'
-          #!/bin/bash
-          set -euo pipefail
-          bash -euo pipefail -c "$VERSION_COMMAND"
-          python3 "$RUNNER_TEMP/release-model/release_model.py" shift-prerelease --root . --tag "$PRERELEASE_TAG"
-          EOF
-          chmod +x "$RUNNER_TEMP/version-packages.sh"
+      - name: Stage version command
+        uses: ./.github/actions/stage-version-command
 
       - name: Remember repository npmrc
         id: npmrc
@@ -255,130 +209,39 @@ jobs:
 
       - name: Inspect pending changesets
         id: pending
-        env:
-          WORK_DIR: ${{ inputs.working_directory }}
-        run: |
-          set -euo pipefail
-
-          CS_DIR="${WORK_DIR}/.changeset"
-          [[ "$WORK_DIR" == "." ]] && CS_DIR=".changeset"
-          if [[ ! -d "$CS_DIR" ]]; then
-            echo "::error::Changesets directory not found: $CS_DIR"
-            exit 1
-          fi
-
-          PENDING=0
-          while IFS= read -r -d '' file; do
-            [[ "$(basename "$file")" == "README.md" ]] && continue
-            PENDING=$((PENDING + 1))
-          done < <(find "$CS_DIR" -maxdepth 1 -type f -name '*.md' -print0)
-
-          echo "count=$PENDING" >> "$GITHUB_OUTPUT"
-          echo "::notice::Pending changesets before versioning: $PENDING"
+        uses: ./.github/actions/inspect-pending-changesets
+        with:
+          working_directory: ${{ inputs.working_directory }}
 
       - name: Configure Changesets prerelease mode
         id: pre_mode
         if: ${{ inputs.manage_prerelease_mode }}
-        working-directory: ${{ inputs.working_directory }}
-        env:
-          CURRENT_BRANCH: ${{ github.ref_name }}
-          STABLE_BRANCH: ${{ inputs.stable_branch }}
-          PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
-          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
-          PENDING_COUNT: ${{ steps.pending.outputs.count }}
-        run: |
-          set -euo pipefail
-
-          PRE_FILE=".changeset/pre.json"
-          TRANSITION="none"
-
-          if [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]]; then
-            if [[ -f "$PRE_FILE" ]]; then
-              MODE=$(jq -r '.mode // empty' "$PRE_FILE")
-              TAG=$(jq -r '.tag // empty' "$PRE_FILE")
-              if [[ "$MODE" != "pre" || "$TAG" != "$PRERELEASE_TAG" ]]; then
-                echo "::error::$PRE_FILE must use mode=pre and tag=$PRERELEASE_TAG on $PRERELEASE_BRANCH"
-                exit 1
-              fi
-              echo "::notice::$PRERELEASE_BRANCH is already in $PRERELEASE_TAG prerelease mode"
-            elif [[ "$PENDING_COUNT" -gt 0 ]]; then
-              npx changeset pre enter "$PRERELEASE_TAG"
-              TRANSITION="enter"
-              echo "::notice::Entered $PRERELEASE_TAG prerelease mode on $PRERELEASE_BRANCH"
-            else
-              echo "::notice::No pending changesets; prerelease mode will begin with the next release change"
-            fi
-          elif [[ "$CURRENT_BRANCH" == "$STABLE_BRANCH" && -f "$PRE_FILE" ]]; then
-            MODE=$(jq -r '.mode // empty' "$PRE_FILE")
-            if [[ "$MODE" == "pre" ]]; then
-              npx changeset pre exit
-              TRANSITION="exit"
-              echo "::notice::Exiting prerelease mode on $STABLE_BRANCH"
-            elif [[ "$MODE" == "exit" ]]; then
-              TRANSITION="exit"
-              echo "::notice::Prerelease exit is already pending on $STABLE_BRANCH"
-            else
-              echo "::error::Unsupported Changesets prerelease mode '$MODE' in $PRE_FILE"
-              exit 1
-            fi
-          fi
-
-          echo "transition=$TRANSITION" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/configure-changesets-prerelease
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          current_branch: ${{ github.ref_name }}
+          stable_branch: ${{ inputs.stable_branch }}
+          prerelease_branch: ${{ inputs.prerelease_branch }}
+          prerelease_tag: ${{ inputs.prerelease_tag }}
+          pending_count: ${{ steps.pending.outputs.count }}
 
       - name: Open Version Packages pull request for prerelease transition
         if: ${{ steps.pre_mode.outputs.transition == 'exit' && steps.pending.outputs.count == '0' }}
-        working-directory: ${{ inputs.working_directory }}
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          CURRENT_BRANCH: ${{ github.ref_name }}
-          VERSION_COMMAND: ${{ inputs.version_command }}
-          PR_TITLE: ${{ inputs.changeset_title }}
-          PR_COMMIT: ${{ inputs.changeset_commit }}
-          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
-          GIT_AUTHOR_NAME: github-actions[bot]
-          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-          GIT_COMMITTER_NAME: github-actions[bot]
-          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-        run: |
-          set -euo pipefail
+        uses: ./.github/actions/open-version-packages-pr
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          github_token: ${{ secrets.GH_TOKEN }}
+          current_branch: ${{ github.ref_name }}
+          version_command: ${{ inputs.version_command }}
+          pr_title: ${{ inputs.changeset_title }}
+          pr_commit: ${{ inputs.changeset_commit }}
+          prerelease_tag: ${{ inputs.prerelease_tag }}
 
-          if [[ -z "$VERSION_COMMAND" ]]; then
-            echo "::error::version_command is empty"
-            exit 1
-          fi
-
-          bash "$RUNNER_TEMP/version-packages.sh"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "::error::Prerelease transition did not change the tree, so no Version Packages pull request was opened."
-            exit 1
-          fi
-
-          BRANCH="changeset-release/${CURRENT_BRANCH}"
-          git checkout -B "$BRANCH"
-          git commit -m "$PR_COMMIT"
-          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-            git push --force-with-lease origin "HEAD:${BRANCH}"
-          else
-            git push origin "HEAD:${BRANCH}"
-          fi
-
-          if gh pr view "$BRANCH" --repo "$GH_REPO" --json url --jq .url >/dev/null 2>&1; then
-            echo "::notice::Updated Version Packages pull request for ${BRANCH}"
-          else
-            gh pr create \
-              --repo "$GH_REPO" \
-              --base "$CURRENT_BRANCH" \
-              --head "$BRANCH" \
-              --title "$PR_TITLE" \
-              --body "Changesets prerelease transition. Review the version and changelog updates, then merge."
-            echo "::notice::Opened Version Packages pull request for ${BRANCH}"
-          fi
-
+      # v1 matches @changesets/cli v2. Action v2 and later require CLI v3
+      # and rename version, commit, title, and createGithubReleases.
       - name: Version Packages pull request
         if: ${{ steps.pending.outputs.count != '0' }}
-        uses: changesets/action@v2
+        uses: changesets/action@v1
         with:
           cwd: ${{ inputs.working_directory }}
           version: bash "$RUNNER_TEMP/version-packages.sh"
@@ -392,115 +255,18 @@ jobs:
 
       - name: Decide if version is ready
         id: gate
-        env:
-          WORK_DIR: ${{ inputs.working_directory }}
-          VERSION_FILE: ${{ inputs.version_file }}
-          CURRENT_BRANCH: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
-          STABLE_BRANCH: ${{ inputs.stable_branch }}
-          PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
-          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
-          MANAGE_PRERELEASE: ${{ inputs.manage_prerelease_mode }}
-          PENDING: ${{ steps.pending.outputs.count }}
-          PRE_TRANSITION: ${{ steps.pre_mode.outputs.transition || 'none' }}
-        run: |
-          set -euo pipefail
-
-          write_output() {
-            local ready="$1"
-            local version="$2"
-            {
-              echo "version_ready=${ready}"
-              echo "version<<VERSION_EOF"
-              echo "$version"
-              echo "VERSION_EOF"
-            } >> "$GITHUB_OUTPUT"
-          }
-
-          CS_DIR=".changeset"
-          if [[ "$WORK_DIR" != "." ]]; then
-            CS_DIR="${WORK_DIR}/.changeset"
-          fi
-
-          PENDING_LIST=""
-          if [[ -d "$CS_DIR" ]]; then
-            echo "::group::Changeset directory ${CS_DIR}"
-            ls -la "$CS_DIR" || true
-            echo "::endgroup::"
-            while IFS= read -r -d '' file; do
-              base=$(basename "$file")
-              if [[ "$base" == "README.md" ]]; then
-                continue
-              fi
-              PENDING_LIST="${PENDING_LIST}${base}"$'\n'
-            done < <(find "$CS_DIR" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null || true)
-          fi
-
-          if [[ "$REF_TYPE" != "branch" || ( "$CURRENT_BRANCH" != "$STABLE_BRANCH" && "$CURRENT_BRANCH" != "$PRERELEASE_BRANCH" ) ]]; then
-            echo "::error::Ref '$CURRENT_BRANCH' ($REF_TYPE) is neither $STABLE_BRANCH nor $PRERELEASE_BRANCH."
-            exit 1
-          fi
-
-          if [[ "$PENDING" -gt 0 || "$PRE_TRANSITION" != "none" ]]; then
-            write_output false ""
-            echo "::notice::Release changes detected (changesets=$PENDING prerelease_transition=$PRE_TRANSITION); Version Packages PR only."
-            echo "::group::Pending changeset files"
-            printf '%s' "$PENDING_LIST"
-            echo "::endgroup::"
-            {
-              echo "### Version gate"
-              echo ""
-              echo "version_ready: \`false\` — $PENDING pending changeset(s), prerelease transition \`$PRE_TRANSITION\`."
-              echo ""
-              echo '```'
-              printf '%s' "$PENDING_LIST"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          PRE_FILE="${CS_DIR}/pre.json"
-          PRE_MODE=""
-          PRE_TAG=""
-          if [[ -f "$PRE_FILE" ]]; then
-            PRE_MODE=$(jq -r '.mode // empty' "$PRE_FILE")
-            PRE_TAG=$(jq -r '.tag // empty' "$PRE_FILE")
-          fi
-
-          if [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]]; then
-            if [[ "$MANAGE_PRERELEASE" == "true" && ( "$PRE_MODE" != "pre" || "$PRE_TAG" != "$PRERELEASE_TAG" ) ]]; then
-              write_output false ""
-              echo "::notice::$PRERELEASE_BRANCH is not in $PRERELEASE_TAG prerelease mode yet."
-              exit 0
-            fi
-          elif [[ -f "$PRE_FILE" ]]; then
-            echo "::error::$STABLE_BRANCH still has $PRE_FILE (mode=$PRE_MODE). Refusing to publish a prerelease as latest."
-            exit 1
-          fi
-
-          VERSION=""
-          VERSION_PATH="$VERSION_FILE"
-          if [[ "$WORK_DIR" != "." && "$VERSION_FILE" != /* ]]; then
-            VERSION_PATH="${WORK_DIR}/${VERSION_FILE}"
-          fi
-          if [[ -f "$VERSION_PATH" ]]; then
-            VERSION=$(jq -r '.version // empty' "$VERSION_PATH")
-            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-              VERSION=""
-            fi
-          fi
-
-          write_output true "$VERSION"
-          echo "::notice::Version ready for publish on $CURRENT_BRANCH"
-          {
-            echo "### Version gate"
-            echo ""
-            echo "version_ready: \`true\`"
-            echo "prerelease mode: \`${PRE_MODE:-none}\`"
-            if [[ -n "$VERSION" ]]; then
-              echo "version file: \`$VERSION\` from \`$VERSION_PATH\`"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        uses: ./.github/actions/decide-publish-ready
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          version_file: ${{ inputs.version_file }}
+          current_branch: ${{ github.ref_name }}
+          ref_type: ${{ github.ref_type }}
+          stable_branch: ${{ inputs.stable_branch }}
+          prerelease_branch: ${{ inputs.prerelease_branch }}
+          prerelease_tag: ${{ inputs.prerelease_tag }}
+          manage_prerelease: ${{ inputs.manage_prerelease_mode }}
+          pending: ${{ steps.pending.outputs.count }}
+          pre_transition: ${{ steps.pre_mode.outputs.transition || 'none' }}
 
   npm:
     name: Publish npm
@@ -511,43 +277,22 @@ jobs:
 
     steps:
       - name: Log run context
-        env:
-          LOG_TITLE: Publish npm
-          LOG_INPUTS: ${{ toJSON(inputs) }}
-          LOG_EXTRA: |
+        uses: ./.github/actions/log-run-context
+        with:
+          title: Publish npm
+          inputs_json: ${{ toJSON(inputs) }}
+          extra: |
             version=${{ needs.version.outputs.version }}
             version_ready=${{ needs.version.outputs.version_ready }}
             branch=${{ github.ref_name }}
             npm_token_present=${{ secrets.NPM_TOKEN != '' }}
-        run: |
-          set -euo pipefail
-          echo "::notice::${LOG_TITLE} — ${GITHUB_EVENT_NAME} ${GITHUB_REF} sha=${GITHUB_SHA:0:7} run=${GITHUB_RUN_ID}"
-          echo "::group::${LOG_TITLE} context"
-          echo "event=${GITHUB_EVENT_NAME}"
-          echo "ref=${GITHUB_REF}"
-          echo "sha=${GITHUB_SHA}"
-          echo "actor=${GITHUB_ACTOR}"
-          echo "run_id=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}"
-          echo "job=${GITHUB_JOB} workflow=${GITHUB_WORKFLOW}"
-          echo "repository=${GITHUB_REPOSITORY}"
-          echo "runner=${RUNNER_OS}/${RUNNER_ARCH}"
-          echo "--- inputs ---"
-          echo "${LOG_INPUTS}"
-          echo "--- extra ---"
-          echo "${LOG_EXTRA}"
-          echo "::endgroup::"
-          {
-            echo "### ${LOG_TITLE}"
-            echo ""
-            echo "| Field | Value |"
-            echo "|-------|-------|"
-            echo "| Version | \`${{ needs.version.outputs.version }}\` |"
-            echo "| Branch | \`${{ github.ref_name }}\` |"
-            echo "| stable command | \`${{ inputs.publish_command }}\` |"
-            echo "| prerelease command | \`${{ inputs.prerelease_publish_command }}\` |"
-            echo "| npm token present | \`${{ secrets.NPM_TOKEN != '' }}\` |"
-            echo "| Job | ${{ job.status }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          variant: publish
+          version: ${{ needs.version.outputs.version }}
+          branch: ${{ github.ref_name }}
+          stable_command: ${{ inputs.publish_command }}
+          prerelease_command: ${{ inputs.prerelease_publish_command }}
+          npm_token_present: ${{ secrets.NPM_TOKEN != '' }}
+          job_status: ${{ job.status }}
 
       - name: Require gh_env
         if: ${{ inputs.use_gh_env }}
@@ -603,101 +348,23 @@ jobs:
         run: npm ci
 
       - name: Publish packages
-        working-directory: ${{ inputs.working_directory }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          CURRENT_BRANCH: ${{ github.ref_name }}
-          STABLE_BRANCH: ${{ inputs.stable_branch }}
-          PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
-          STABLE_COMMAND: ${{ inputs.publish_command }}
-          PRERELEASE_COMMAND: ${{ inputs.prerelease_publish_command }}
-          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
-        run: |
-          set -euo pipefail
-
-          run_publish() {
-            local command="$1"
-            if [[ -z "$command" ]]; then
-              echo "::error::Publish command is empty"
-              exit 1
-            fi
-            bash -euo pipefail -c "$command"
-          }
-
-          skip_if_published() {
-            python3 "$RUNNER_TEMP/release-model/release_model.py" skip-if-published --root .
-          }
-
-          verify_dist_tag() {
-            local tag="$PRERELEASE_TAG"
-            [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]] || tag="latest"
-            python3 "$RUNNER_TEMP/release-model/release_model.py" verify-dist-tag --root . --tag "$tag"
-          }
-
-          if skip_if_published; then
-            echo "::notice::All package versions are already on npm. This commit will not publish again."
-            exit 0
-          fi
-
-          if [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]]; then
-            npm config set tag "$PRERELEASE_TAG"
-            echo "::notice::Running prerelease publish command: $PRERELEASE_COMMAND"
-            python3 "$RUNNER_TEMP/release-model/release_model.py" assert-versions --root . --tag "$PRERELEASE_TAG" --prerelease
-            run_publish "$PRERELEASE_COMMAND"
-            verify_dist_tag
-          elif [[ "$CURRENT_BRANCH" == "$STABLE_BRANCH" ]]; then
-            npm config set tag latest
-            if [[ -f .changeset/pre.json ]]; then
-              echo "::error::Refusing to publish on $STABLE_BRANCH while .changeset/pre.json exists"
-              exit 1
-            fi
-            python3 "$RUNNER_TEMP/release-model/release_model.py" assert-versions --root . --tag beta
-            while IFS= read -r -d '' pkg; do
-              private=$(jq -r '.private // false' "$pkg")
-              ver=$(jq -r '.version // empty' "$pkg")
-              [[ "$private" == "true" || -z "$ver" || "$ver" == "null" ]] && continue
-              if [[ "$ver" == *-* ]]; then
-                echo "::error::$pkg is $ver. Refusing to publish a prerelease as latest."
-                exit 1
-              fi
-            done < <(find . -name node_modules -prune -o -name package.json -print0)
-            echo "::notice::Running stable publish command: $STABLE_COMMAND"
-            run_publish "$STABLE_COMMAND"
-            verify_dist_tag
-          else
-            echo "::error::Refusing to publish from branch '$CURRENT_BRANCH'"
-            exit 1
-          fi
-
-      # Keep diagnostics inline: an externally called reusable workflow cannot
-      # resolve a local composite action from this workflow's source repository.
-      - name: Collect npm diagnostics
-        if: ${{ failure() }}
-        run: |
-          set +e
-          ARTIFACT_DIR="${RUNNER_TEMP}/npm-debug"
-          NPM_CACHE="$(npm config get cache 2>/dev/null)"
-          mkdir -p "$ARTIFACT_DIR"
-          {
-            echo "Runner OS: ${RUNNER_OS}"
-            echo "Node: $(node --version 2>&1)"
-            echo "npm: $(npm --version 2>&1)"
-            echo "Repository: ${GITHUB_REPOSITORY}"
-            echo "Run ID: ${GITHUB_RUN_ID}"
-          } > "${ARTIFACT_DIR}/environment.txt"
-          if [[ -d "${NPM_CACHE}/_logs" ]]; then
-            cp -R "${NPM_CACHE}/_logs/." "${ARTIFACT_DIR}/" 2>/dev/null || true
-          fi
+        uses: ./.github/actions/publish-npm-packages
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          npm_token: ${{ secrets.NPM_TOKEN }}
+          current_branch: ${{ github.ref_name }}
+          stable_branch: ${{ inputs.stable_branch }}
+          prerelease_branch: ${{ inputs.prerelease_branch }}
+          stable_command: ${{ inputs.publish_command }}
+          prerelease_command: ${{ inputs.prerelease_publish_command }}
+          prerelease_tag: ${{ inputs.prerelease_tag }}
 
       - name: Upload npm diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/upload-npm-logs
         with:
-          name: npm-logs-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/npm-debug/**
-          if-no-files-found: error
-          retention-days: 14
+          artifact-name: npm-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: "14"
 
       - name: Publish outcome
         if: always()

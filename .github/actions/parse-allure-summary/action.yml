@@ -1,0 +1,43 @@
+name: Parse Allure Summary
+description: >
+  Read allure-html/widgets/summary.json and record total, passed, failed,
+  and broken counts. A missing file records zeros and reports an error.
+
+inputs:
+  test_tags:
+    description: Tag expression shown in the step summary.
+    required: true
+  report_url:
+    description: URL of the published Allure report.
+    required: false
+    default: ''
+  summary_path:
+    description: Path to widgets/summary.json, relative to the workspace.
+    required: false
+    default: allure-html/widgets/summary.json
+
+outputs:
+  total_tests:
+    description: Total test cases.
+    value: ${{ steps.summary.outputs.total_tests }}
+  passed_tests:
+    description: Passed test cases.
+    value: ${{ steps.summary.outputs.passed_tests }}
+  failed_tests:
+    description: Failed test cases.
+    value: ${{ steps.summary.outputs.failed_tests }}
+  broken_tests:
+    description: Broken test cases.
+    value: ${{ steps.summary.outputs.broken_tests }}
+
+runs:
+  using: composite
+  steps:
+    - name: Parse test summary stats
+      id: summary
+      shell: bash
+      env:
+        TEST_TAGS: ${{ inputs.test_tags }}
+        REPORT_URL: ${{ inputs.report_url }}
+        SUMMARY_JSON: ${{ inputs.summary_path }}
+      run: bash "$GITHUB_ACTION_PATH/parse-allure-summary.sh"

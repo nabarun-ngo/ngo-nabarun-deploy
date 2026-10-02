@@ -1,0 +1,51 @@
+name: Publish Release Event
+description: >
+  Validate a bare semver tag and publish one Release-Created fact to the
+  platform repository. Fails when the tag is not bare semver or prerelease
+  disagrees with the tag, so the error points at the caller.
+
+inputs:
+  dispatch_token:
+    description: Token that can create a repository dispatch on platform_repository.
+    required: true
+  platform_repository:
+    description: Platform repository that consumes the event, as org/repo.
+    required: true
+  event_type:
+    description: repository_dispatch event type.
+    required: true
+  tag_name:
+    description: Bare semver tag, for example 1.4.0 or 1.4.0-beta.1.
+    required: true
+  prerelease:
+    description: '"true" or "false". Must agree with tag_name.'
+    required: true
+  source_repository:
+    description: Application repository. Empty uses the calling repository.
+    required: false
+    default: ''
+  source_ref:
+    description: Branch the release was created from. Empty uses the calling ref name.
+    required: false
+    default: ''
+
+outputs:
+  published:
+    description: '"true" when the platform repository accepted the event.'
+    value: ${{ steps.dispatch.outputs.published }}
+
+runs:
+  using: composite
+  steps:
+    - name: Publish release fact
+      id: dispatch
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.dispatch_token }}
+        PLATFORM_REPOSITORY: ${{ inputs.platform_repository }}
+        EVENT_TYPE: ${{ inputs.event_type }}
+        TAG_NAME: ${{ inputs.tag_name }}
+        PRERELEASE: ${{ inputs.prerelease }}
+        SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+        SOURCE_REF: ${{ inputs.source_ref }}
+      run: bash "$GITHUB_ACTION_PATH/publish-release-event.sh"

@@ -1,0 +1,32 @@
+name: Deploy GAE Version
+description: >
+  Deploy app.yaml to App Engine with --no-promote. The version id is
+  run-<github run id>.
+
+inputs:
+  working_directory:
+    description: Directory that contains app.yaml.
+    required: true
+  gcp_project_id:
+    description: Google Cloud project id.
+    required: true
+  gae_service:
+    description: App Engine service name.
+    required: true
+
+outputs:
+  version_id:
+    description: App Engine version that was deployed and not promoted.
+    value: ${{ steps.deploy.outputs.version_id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Deploy to GAE (no-promote)
+      id: deploy
+      shell: bash
+      env:
+        WORK_DIR: ${{ inputs.working_directory }}
+        GCP_PROJECT_ID: ${{ inputs.gcp_project_id }}
+        GAE_SERVICE: ${{ inputs.gae_service }}
+      run: bash "$GITHUB_ACTION_PATH/deploy-gae-version.sh"

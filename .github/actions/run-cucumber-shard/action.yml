@@ -1,0 +1,53 @@
+name: Run Cucumber Shard
+description: >
+  Run one Maven Cucumber shard. When use_doppler is true, Maven runs
+  inside doppler run.
+
+inputs:
+  working_directory:
+    description: Directory that contains pom.xml.
+    required: true
+  use_doppler:
+    description: '"true" wraps Maven with doppler run.'
+    required: true
+  doppler_token:
+    description: Doppler token. Required when use_doppler is true.
+    required: false
+    default: ''
+  doppler_project:
+    description: Doppler project.
+    required: false
+    default: ''
+  doppler_config:
+    description: Doppler config.
+    required: false
+    default: ''
+  test_tags:
+    description: Cucumber tag expression.
+    required: true
+  shard_index:
+    description: This shard's index, starting at 1.
+    required: true
+  total_shards:
+    description: Total shard count.
+    required: true
+  target_environment:
+    description: Logical environment under test.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Run Cucumber shard
+      shell: bash
+      env:
+        WORK_DIR: ${{ inputs.working_directory }}
+        USE_DOPPLER: ${{ inputs.use_doppler }}
+        DOPPLER_TOKEN: ${{ inputs.doppler_token }}
+        DOPPLER_PROJECT: ${{ inputs.doppler_project }}
+        DOPPLER_CONFIG: ${{ inputs.doppler_config }}
+        TEST_TAGS: ${{ inputs.test_tags }}
+        SHARD_INDEX: ${{ inputs.shard_index }}
+        TOTAL_SHARDS: ${{ inputs.total_shards }}
+        TARGET_ENV: ${{ inputs.target_environment }}
+      run: bash "$GITHUB_ACTION_PATH/run-cucumber-shard.sh"

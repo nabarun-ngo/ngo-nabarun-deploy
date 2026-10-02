@@ -42,82 +42,12 @@ jobs:
 
       - name: Match release to a manifest
         id: policy
-        env:
-          PAYLOAD_REPOSITORY: ${{ github.event.client_payload.repository }}
-          PAYLOAD_TAG: ${{ github.event.client_payload.tag_name }}
-          PAYLOAD_PRERELEASE: ${{ github.event.client_payload.prerelease }}
-          PAYLOAD_REF: ${{ github.event.client_payload.ref }}
-        run: |
-          set -euo pipefail
-
-          write_decision() {
-            {
-              echo "action=$1"
-              echo "manifest_name=$2"
-              echo "tag_name=$3"
-              echo "reason=$4"
-            } >> "$GITHUB_OUTPUT"
-          }
-
-          if [[ -z "${PAYLOAD_REPOSITORY}" || -z "${PAYLOAD_TAG}" ]]; then
-            echo "::error::Release-Created requires repository and tag_name."
-            exit 1
-          fi
-          if [[ ! "${PAYLOAD_REPOSITORY}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-            echo "::error::repository must be owner/name."
-            exit 1
-          fi
-          if [[ ! "$PAYLOAD_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && ! "$PAYLOAD_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[1-9][0-9]*$ ]]; then
-            echo "::error::tag_name must be bare semver, for example 1.4.0 or 1.4.0-beta.1."
-            exit 1
-          fi
-
-          mapfile -t MATCHES < <(jq -r --arg repo "$PAYLOAD_REPOSITORY" 'select(.source.repository == $repo) | input_filename' config/manifests/*.json)
-          COUNT="${#MATCHES[@]}"
-
-          if [[ "$COUNT" -eq 0 ]]; then
-            echo "::notice::No manifest matches ${PAYLOAD_REPOSITORY}. Release recorded and skipped."
-            write_decision skip "" "$PAYLOAD_TAG" "unrecognized repository"
-            exit 0
-          fi
-          if [[ "$COUNT" -gt 1 ]]; then
-            echo "::error::Multiple manifests match ${PAYLOAD_REPOSITORY}."
-            printf '  - %s\n' "${MATCHES[@]}"
-            exit 1
-          fi
-
-          MANIFEST_FILE="${MATCHES[0]}"
-          MANIFEST_NAME="$(basename "$MANIFEST_FILE" .json)"
-          PLATFORM="$(jq -r '.deploy.platform' "$MANIFEST_FILE")"
-          echo "::notice::Matched ${PAYLOAD_REPOSITORY} to ${MANIFEST_NAME} (${PLATFORM}) ref=${PAYLOAD_REF}"
-
-          PRERELEASE_FLAG=false
-          if [[ "${PAYLOAD_PRERELEASE}" == "true" ]]; then
-            PRERELEASE_FLAG=true
-          fi
-          if [[ "$PAYLOAD_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[1-9][0-9]*$ ]]; then
-            TAG_IS_PRERELEASE=true
-          else
-            TAG_IS_PRERELEASE=false
-          fi
-          if [[ "$PRERELEASE_FLAG" != "$TAG_IS_PRERELEASE" ]]; then
-            echo "::error::prerelease '${PAYLOAD_PRERELEASE}' does not match tag '${PAYLOAD_TAG}'."
-            exit 1
-          fi
-
-          if [[ "$TAG_IS_PRERELEASE" != "true" ]]; then
-            echo "::notice::Stable release ${PAYLOAD_TAG} is not deployed automatically."
-            write_decision skip "$MANIFEST_NAME" "$PAYLOAD_TAG" "stable release stays manual"
-            exit 0
-          fi
-          if [[ "$PLATFORM" != "gae" ]]; then
-            echo "::notice::Manifest ${MANIFEST_NAME} uses ${PLATFORM}. Release recorded and skipped."
-            write_decision skip "$MANIFEST_NAME" "$PAYLOAD_TAG" "platform is not auto-deployed"
-            exit 0
-          fi
-
-          echo "::notice::Stage deploy selected for ${MANIFEST_NAME}@${PAYLOAD_TAG}"
-          write_decision deploy "$MANIFEST_NAME" "$PAYLOAD_TAG" "prerelease deploys to stage"
+        uses: ./.github/actions/decide-release-deployment
+        with:
+          repository: ${{ github.event.client_payload.repository }}
+          tag_name: ${{ github.event.client_payload.tag_name }}
+          prerelease: ${{ github.event.client_payload.prerelease }}
+          ref: ${{ github.event.client_payload.ref }}
 
       - name: Write step summary
         if: always()

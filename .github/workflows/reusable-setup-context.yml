@@ -82,77 +82,16 @@ jobs:
 
       - name: Resolve context
         id: ctx
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          DISPATCH_EVENT_TYPE: ${{ github.event.action }}
-          INPUT_MANIFEST: ${{ inputs.manifest_name }}
-          INPUT_TARGET_ENV: ${{ inputs.target_environment }}
-          INPUT_TAG: ${{ inputs.tag_name }}
-          INPUT_WORKFLOW_TYPE: ${{ inputs.workflow_type }}
-          INPUT_SCHEDULE_PROFILE: ${{ inputs.schedule_profile_id }}
-          # repository_dispatch payload fields
-          DISPATCH_MANIFEST: ${{ github.event.client_payload.manifest_name }}
-          DISPATCH_TAG: ${{ github.event.client_payload.tag_name }}
-          DISPATCH_ENV: ${{ github.event.client_payload.target_environment }}
-        run: |
-          set -euo pipefail
-
-          # Determine trigger type
-          case "$EVENT_NAME" in
-            schedule)
-              TRIGGER_TYPE="schedule"
-              APPROVAL_MODE="auto"
-              ;;
-            repository_dispatch)
-              TRIGGER_TYPE="repository_dispatch"
-              APPROVAL_MODE="manual"
-              ;;
-            *)
-              TRIGGER_TYPE="workflow_dispatch"
-              APPROVAL_MODE="manual"
-              ;;
-          esac
-
-          # Resolve manifest name: dispatch payload > input > schedule profile
-          MANIFEST_NAME="$INPUT_MANIFEST"
-          TARGET_ENV="$INPUT_TARGET_ENV"
-          TAG_NAME="$INPUT_TAG"
-          WORKFLOW_TYPE="$INPUT_WORKFLOW_TYPE"
-
-          if [[ "$TRIGGER_TYPE" == "repository_dispatch" ]]; then
-            [[ -n "$DISPATCH_MANIFEST" ]] && MANIFEST_NAME="$DISPATCH_MANIFEST"
-            [[ -n "$DISPATCH_TAG" ]]     && TAG_NAME="$DISPATCH_TAG"
-            [[ -n "$DISPATCH_ENV" ]]     && TARGET_ENV="$DISPATCH_ENV"
-          fi
-
-          # Validate mandatory fields after resolution
-          if [[ -z "$MANIFEST_NAME" && "$WORKFLOW_TYPE" == "deploy" ]]; then
-            echo "::error::manifest_name is required for deploy workflows"
-            exit 1
-          fi
-          if [[ -z "$TARGET_ENV" ]]; then
-            TARGET_ENV="stage"
-          fi
-
-          {
-            echo "trigger_type=$TRIGGER_TYPE"
-            echo "manifest_name=$MANIFEST_NAME"
-            echo "target_environment=$TARGET_ENV"
-            echo "tag_name=$TAG_NAME"
-            echo "approval_mode=$APPROVAL_MODE"
-            echo "workflow_type=$WORKFLOW_TYPE"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "::group::Resolved context"
-          echo "trigger_type=$TRIGGER_TYPE"
-          echo "manifest_name=$MANIFEST_NAME"
-          echo "target_environment=$TARGET_ENV"
-          echo "tag_name=$TAG_NAME"
-          echo "approval_mode=$APPROVAL_MODE"
-          echo "workflow_type=$WORKFLOW_TYPE"
-          echo "::endgroup::"
-          echo "::notice::Context resolved — trigger=$TRIGGER_TYPE, manifest=$MANIFEST_NAME, env=$TARGET_ENV, tag=$TAG_NAME"
+        uses: ./.github/actions/resolve-workflow-context
+        with:
+          event_name: ${{ github.event_name }}
+          manifest_name: ${{ inputs.manifest_name }}
+          target_environment: ${{ inputs.target_environment }}
+          tag_name: ${{ inputs.tag_name }}
+          workflow_type: ${{ inputs.workflow_type }}
+          dispatch_manifest: ${{ github.event.client_payload.manifest_name }}
+          dispatch_tag: ${{ github.event.client_payload.tag_name }}
+          dispatch_environment: ${{ github.event.client_payload.target_environment }}
 
       - name: Write step summary
         shell: bash

@@ -1,0 +1,22 @@
+name: Inject Doppler Token
+description: >
+  Append DOPPLER_TOKEN to env_variables in the rendered app.yaml.
+  The token is written only into the ephemeral deploy bundle.
+
+inputs:
+  working_directory:
+    description: Directory that contains app.yaml.
+    required: true
+  doppler_token:
+    description: Doppler token written into app.yaml.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Inject DOPPLER_TOKEN into app.yaml
+      shell: bash
+      env:
+        WORK_DIR: ${{ inputs.working_directory }}
+        DOPPLER_TOKEN: ${{ inputs.doppler_token }}
+      run: bash "$GITHUB_ACTION_PATH/inject-doppler-token.sh"

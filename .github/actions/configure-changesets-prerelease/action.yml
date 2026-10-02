@@ -1,0 +1,44 @@
+name: Configure Changesets Prerelease
+description: >
+  Enter prerelease mode on the prerelease branch when changesets are pending,
+  or exit it on the stable branch. Writes transition enter, exit, or none.
+
+inputs:
+  working_directory:
+    description: Directory that contains .changeset, relative to the workspace.
+    required: true
+  current_branch:
+    description: Branch this run is on.
+    required: true
+  stable_branch:
+    description: Branch that publishes stable versions.
+    required: true
+  prerelease_branch:
+    description: Branch that publishes prerelease versions.
+    required: true
+  prerelease_tag:
+    description: Changesets prerelease tag.
+    required: true
+  pending_count:
+    description: Number of pending changeset files.
+    required: true
+
+outputs:
+  transition:
+    description: '"enter", "exit", or "none".'
+    value: ${{ steps.pre_mode.outputs.transition }}
+
+runs:
+  using: composite
+  steps:
+    - name: Configure Changesets prerelease mode
+      id: pre_mode
+      shell: bash
+      env:
+        WORK_DIR: ${{ inputs.working_directory }}
+        CURRENT_BRANCH: ${{ inputs.current_branch }}
+        STABLE_BRANCH: ${{ inputs.stable_branch }}
+        PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
+        PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
+        PENDING_COUNT: ${{ inputs.pending_count }}
+      run: bash "$GITHUB_ACTION_PATH/configure-changesets-prerelease.sh"

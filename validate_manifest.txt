@@ -1,8 +1,3 @@
-.github/workflows/reusable-run-tests-allure.yml:223:30: property "doppler_token" is not defined in object type {actions_runner_debug: string; actions_step_debug: string; github_token: string; pat: string} [expression]
-    |
-223 |           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
-    |                              ^~~~~~~~~~~~~~~~~~~~~
-.github/workflows/reusable-run-tests-allure.yml:239:30: property "doppler_token" is not defined in object type {actions_runner_debug: string; actions_step_debug: string; github_token: string; pat: string} [expression]
-    |
-239 |           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
-    |                              ^~~~~~~~~~~~~~~~~~~~~
+Warning: Unexpected input(s) 'version', 'commit', 'title', 'createGithubReleases', valid inputs are ['github-token', 'publish-script', 'version-script', 'commit-message', 'pr-title', 'pr-draft', 'pr-base-branch', 'create-github-releases', 'push-git-tags', 'push-with-git-cli', 'cwd']
+Run changesets/action@v2
+Error: This version of the Changesets action is designed to work with Changesets CLI v3. Changesets CLI v2 is not supported; use Changesets action v1 instead, which is compatible with CLI v2.

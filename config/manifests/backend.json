@@ -26,7 +26,7 @@
     "install": "npm ci",
     "command": "DATABASE_URL=demo npm run build",
     "outputPath": "dist",
-    "bundleIncludes": ["prisma", "prisma.config.ts"]
+    "bundleIncludes": ["prisma", "prisma.config.ts","node_modules/prisma"]
   },
   "deploy": {
     "platform": "gae",

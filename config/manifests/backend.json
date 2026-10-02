@@ -24,7 +24,7 @@
     "runtime": "node",
     "nodeVersion": "24",
     "install": "npm ci",
-    "command": "DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/ce_api npm run build",
+    "command": "DATABASE_URL=demo npm run build",
     "outputPath": "dist",
     "bundleIncludes": ["prisma", "prisma.config.ts"]
   },

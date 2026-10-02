@@ -126,4 +126,6 @@ runs:
           echo "| Secrets provider | \`${{ steps.parse.outputs.secrets_provider }}\` |"
           echo "| Doppler project | \`${{ steps.parse.outputs.doppler_project }}\` |"
           echo "| Doppler config | \`${{ steps.parse.outputs.doppler_config }}\` |"
+          echo "| Manifest json  | \`${{ steps.parse.outputs.manifest_json }}\`  |"
+          
         } >> "$GITHUB_STEP_SUMMARY"

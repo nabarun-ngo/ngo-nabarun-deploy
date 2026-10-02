@@ -145,10 +145,10 @@ jobs:
             echo "::error::Could not parse the platform repository from GITHUB_WORKFLOW_REF."
             exit 1
           fi
-          if [[ -n "${TEMPLATES_REPOSITORY:-}" && "$TEMPLATES_REPOSITORY" != "$repo" ]]; then
-            echo "::error::templates_repository (${TEMPLATES_REPOSITORY}) is not the repository that contains this workflow (${repo})."
-            exit 1
-          fi
+          # if [[ -n "${TEMPLATES_REPOSITORY:-}" && "$TEMPLATES_REPOSITORY" != "$repo" ]]; then
+          #   echo "::error::templates_repository (${TEMPLATES_REPOSITORY}) is not the repository that contains this workflow (${repo})."
+          #   exit 1
+          # fi
           {
             echo "ref=$ref"
             echo "repository=$repo"

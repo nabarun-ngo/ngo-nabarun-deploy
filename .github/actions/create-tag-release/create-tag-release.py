@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Create one application git tag and GitHub Release.
 
+No version/changelog commit is made and nothing is pushed to the branch.
+The next version is computed from the latest tag reachable from the current
+branch (``git tag --merged HEAD``) plus the commits made since that tag, and
+the resulting tag is created on the current HEAD.
+
 The calling workflow stages release_model.py on PYTHONPATH and checks out
-the application repository before running this script.
+the application repository (with full history and tags, e.g. ``fetch-depth: 0``)
+before running this script.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ import release_model
 
 
 TAG_RE = re.compile(r"^\d+\.\d+\.\d+(-(alpha|beta|rc)\.[1-9]\d*)?$")
+DEFAULT_LAST_STABLE = "0.0.0"
 
 
 def notice(message: str) -> None:
@@ -56,6 +63,7 @@ def normalize_tag(value: str) -> str:
 
 
 def merged_tags() -> list[str]:
+    """Release tags reachable from HEAD, i.e. tags that belong to this branch."""
     listed = run(["git", "tag", "--merged", "HEAD"]).stdout.splitlines()
     return [normalize_tag(tag) for tag in listed if TAG_RE.fullmatch(normalize_tag(tag))]
 
@@ -81,14 +89,25 @@ def commits_since(baseline: str | None) -> list[str]:
     return [item.strip("\n") for item in log.split("\x1f") if item.strip()]
 
 
+def fallback_version() -> str:
+    """Version used as the starting point only when the branch has no stable tag yet."""
+    version_file = os.environ.get("VERSION_FILE", "")
+    if version_file and Path(version_file).is_file():
+        try:
+            data = json.loads(Path(version_file).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return DEFAULT_LAST_STABLE
+        value = str(data.get("version") or "").strip()
+        # Only a stable X.Y.Z value is usable as the starting point.
+        if re.fullmatch(r"\d+\.\d+\.\d+", value):
+            return value
+    return DEFAULT_LAST_STABLE
+
+
 def plan() -> dict:
-    version_file = os.environ["VERSION_FILE"]
-    file_version = ""
-    if Path(version_file).is_file():
-        file_version = json.loads(Path(version_file).read_text(encoding="utf-8")).get("version") or ""
     merged = merged_tags()
     stables = [tag for tag in merged if "-" not in tag]
-    last_stable = max(stables, key=release_model.version_sort_key) if stables else file_version
+    last_stable = max(stables, key=release_model.version_sort_key) if stables else fallback_version()
     payload = {
         "branch": os.environ["CURRENT_BRANCH"],
         "stable_branch": os.environ["STABLE_BRANCH"],
@@ -105,19 +124,6 @@ def plan() -> dict:
         return release_model.plan_release(payload)
     except ValueError as exc:
         fail(str(exc))
-
-
-def apply_version(version: str, version_file: str) -> None:
-    subjects = Path(os.environ["RUNNER_TEMP"]) / "release-subjects.txt"
-    code = release_model.main([
-        "apply",
-        "--version", version,
-        "--version-file", version_file,
-        "--changelog", "CHANGELOG.md",
-        "--subjects-file", str(subjects),
-    ])
-    if code != 0:
-        fail(f"Could not apply version {version}")
 
 
 def create_release(version: str, prerelease: bool, repository: str) -> None:
@@ -167,7 +173,6 @@ def main() -> int:
     current = os.environ["CURRENT_BRANCH"]
     stable = os.environ["STABLE_BRANCH"]
     prerelease_branch = os.environ["PRERELEASE_BRANCH"]
-    version_file = os.environ["VERSION_FILE"]
     repository = os.environ["GH_REPO"]
 
     if prerelease_tag not in {"alpha", "beta", "rc"}:
@@ -183,46 +188,19 @@ def main() -> int:
 
     version = planned["version"]
     is_prerelease = bool(planned["prerelease"])
-    subjects = Path(os.environ["RUNNER_TEMP"]) / "release-subjects.txt"
-    subjects.write_text("".join(f"{line}\n" for line in planned.get("commits", [])), encoding="utf-8")
+    head = run(["git", "rev-parse", "HEAD"]).stdout.strip()
 
     existing = tag_commit(version)
-    head = run(["git", "rev-parse", "HEAD"]).stdout.strip()
     if existing and existing != head:
         fail(f"Tag {version} already exists on another commit and cannot be moved.")
 
     created = False
-    subject = run(["git", "log", "-1", "--format=%s"]).stdout.strip()
-    if existing == head and existing:
+    if existing:
         notice(f"Tag {version} already points at this commit.")
-    elif subject != f"chore(release): {version} [skip ci]":
-        apply_version(version, version_file)
-        run(["git", "add", version_file, "CHANGELOG.md"])
-        staged = run(["git", "diff", "--cached", "--quiet"], check=False)
-        if staged.returncode == 0:
-            notice(f"Version files already match {version}")
-        else:
-            run(["git", "commit", "-m", f"chore(release): {version} [skip ci]"])
-            pushed = run(["git", "push", "origin", f"HEAD:{current}"], check=False)
-            if pushed.returncode != 0:
-                # Surface git's real rejection reason (branch protection,
-                # missing token permission, non-fast-forward, ...).
-                detail = (pushed.stderr or pushed.stdout).strip()
-                fail(
-                    f"Could not push the release commit to {current}. "
-                    f"Allow the release identity to update {current}, "
-                    f"or check whether the branch moved during the run.\n{detail}"
-                )
-            created = True
-
-    head = run(["git", "rev-parse", "HEAD"]).stdout.strip()
-    existing = tag_commit(version)
-    if existing and existing != head:
-        fail(f"Tag {version} already exists on another commit and cannot be moved.")
-    if not existing:
+    else:
         if remote_tag_exists(version):
             fail(f"Tag {version} already exists on another commit and cannot be moved.")
-        run(["git", "tag", "-a", version, "-m", f"chore(release): {version} [skip ci]"])
+        run(["git", "tag", "-a", version, "-m", f"Release {version}"])
         run(["git", "push", "origin", f"refs/tags/{version}"])
         created = True
 
@@ -230,16 +208,18 @@ def main() -> int:
     synchronize_stable_branch()
     write_outputs(version, created, is_prerelease, False)
 
-    summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
-    with summary.open("a", encoding="utf-8") as handle:
-        handle.write(
-            "### Tag and GitHub Release\n\n"
-            "| Field | Value |\n"
-            "|-------|-------|\n"
-            f"| Tag | `{version}` |\n"
-            f"| Created this run | `{str(created).lower()}` |\n"
-            f"| Prerelease | `{str(is_prerelease).lower()}` |\n"
-        )
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with Path(summary).open("a", encoding="utf-8") as handle:
+            handle.write(
+                "### Tag and GitHub Release\n\n"
+                "| Field | Value |\n"
+                "|-------|-------|\n"
+                f"| Tag | `{version}` |\n"
+                f"| Commit | `{head[:12]}` |\n"
+                f"| Created this run | `{str(created).lower()}` |\n"
+                f"| Prerelease | `{str(is_prerelease).lower()}` |\n"
+            )
     return 0
 
 

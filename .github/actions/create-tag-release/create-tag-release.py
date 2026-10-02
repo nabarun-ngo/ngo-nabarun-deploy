@@ -205,7 +205,14 @@ def main() -> int:
             run(["git", "commit", "-m", f"chore(release): {version} [skip ci]"])
             pushed = run(["git", "push", "origin", f"HEAD:{current}"], check=False)
             if pushed.returncode != 0:
-                fail(f"Could not push the release commit. Allow the release identity to update {current}.")
+                # Surface git's real rejection reason (branch protection,
+                # missing token permission, non-fast-forward, ...).
+                detail = (pushed.stderr or pushed.stdout).strip()
+                fail(
+                    f"Could not push the release commit to {current}. "
+                    f"Allow the release identity to update {current}, "
+                    f"or check whether the branch moved during the run.\n{detail}"
+                )
             created = True
 
     head = run(["git", "rev-parse", "HEAD"]).stdout.strip()

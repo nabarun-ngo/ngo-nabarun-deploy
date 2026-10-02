@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-BUNDLE_DIR="__deploy_bundle__"
+BUNDLE_DIR="deploy-bundle"
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR"
 

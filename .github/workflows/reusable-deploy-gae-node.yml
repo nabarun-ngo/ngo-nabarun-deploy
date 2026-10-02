@@ -258,7 +258,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.set_artifact.outputs.artifact_name }}
-          path: __deploy_bundle__/
+          path: deploy-bundle
           retention-days: 1
           if-no-files-found: error
 
@@ -337,7 +337,7 @@ jobs:
           persist-credentials: false
 
       - name: Download deploy bundle
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v7
         with:
           name: ${{ needs.build.outputs.artifact_name }}
           path: deploy-bundle

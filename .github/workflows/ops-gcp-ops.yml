@@ -82,10 +82,6 @@ on:
         required: false
         type: boolean
         default: true
-      confirm:
-        description: 'Type "yes" to confirm destructive operations (restart, cleanup-*)'
-        required: false
-        default: ''
 
 permissions:
   contents: read
@@ -115,7 +111,7 @@ jobs:
         id: check
         env:
           OPERATION: ${{ inputs.operation }}
-          CONFIRM: ${{ inputs.confirm }}
+          CONFIRM: 'yes'
         run: |
           DESTRUCTIVE_OPS="restart-service cleanup-versions cleanup-gcs cleanup-registry"
 

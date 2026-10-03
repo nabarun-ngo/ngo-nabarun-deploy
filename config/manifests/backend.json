@@ -40,7 +40,7 @@
   },
   "database": {
     "migrate": true,
-    "command": "npm run migrate:deploy"
+    "command": "npm run migrate:deploy && npm run seed"
   },
   "healthCheck": {
     "enabled": true,

@@ -26,6 +26,11 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Install Dev Dependencies
+      working-directory: ${{ inputs.working_directory }}
+      shell: bash
+      run: npm install
+      
     - name: Run database migration
       shell: bash
       env:

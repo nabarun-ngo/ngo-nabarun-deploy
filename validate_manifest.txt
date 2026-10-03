@@ -1,163 +1,23 @@
-starting build "ee0e5de5-db3e-49c9-961f-3e15401d6715"
+ python3 scripts/test_workflow_guardrails.py
+  python3 scripts/test_release_model.py
+  python3 scripts/validate-workflow-guardrails.py
+  shell: /usr/bin/bash -e {0}
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.026s
 
-FETCHSOURCE
-BUILD
-Starting Step #0 - "fetch"
-Step #0 - "fetch": Pulling image: asia-south1-docker.pkg.dev/serverless-runtimes/utilities/gcs-fetcher:base_20260522_18_04_RC00
-Step #0 - "fetch": base_20260522_18_04_RC00: Pulling from serverless-runtimes/utilities/gcs-fetcher
-Step #0 - "fetch": 19bda58a5976: Pulling fs layer
-Step #0 - "fetch": 19bda58a5976: Verifying Checksum
-Step #0 - "fetch": 19bda58a5976: Download complete
-Step #0 - "fetch": 19bda58a5976: Pull complete
-Step #0 - "fetch": Digest: sha256:2a0b875d5b008f08d91f746137f35e7ce187be1ffc34730f61146364b5814a77
-Step #0 - "fetch": Status: Downloaded newer image for asia-south1-docker.pkg.dev/serverless-runtimes/utilities/gcs-fetcher:base_20260522_18_04_RC00
-Step #0 - "fetch": asia-south1-docker.pkg.dev/serverless-runtimes/utilities/gcs-fetcher:base_20260522_18_04_RC00
-Step #0 - "fetch": Fetching manifest gs://staging.ngonabarun.appspot.com/ae/operation-1791005854370-65ce90bbd8c39-a3bbd101-783c1eb3/manifest.json.
-Step #0 - "fetch": Processing 1467 files.
-Step #0 - "fetch": ******************************************************
-Step #0 - "fetch": Status:                      SUCCESS
-Step #0 - "fetch": Started:                     2026-10-03T05:37:56Z
-Step #0 - "fetch": Completed:                   2026-10-03T05:37:57Z
-Step #0 - "fetch": Requested workers:    200
-Step #0 - "fetch": Actual workers:       200
-Step #0 - "fetch": Total files:         1467
-Step #0 - "fetch": Total retries:          0
-Step #0 - "fetch": GCS timeouts:           0
-Step #0 - "fetch": MiB downloaded:        16.34 MiB
-Step #0 - "fetch": MiB/s throughput:      20.92 MiB/s
-Step #0 - "fetch": Time for manifest:     99.14 ms
-Step #0 - "fetch": Total time:             0.89 s
-Step #0 - "fetch": ******************************************************
-Finished Step #0 - "fetch"
-Starting Step #1 - "pre-buildpack"
-Step #1 - "pre-buildpack": Already have image: asia-south1-docker.pkg.dev/serverless-runtimes/google-24-full/builder/nodejs:nodejs_20260924a_RC00
-Step #1 - "pre-buildpack": Preparing directory /layers
-Step #1 - "pre-buildpack": Preparing directory /workspace
-Step #1 - "pre-buildpack": Preparing directory /builder/home
-Step #1 - "pre-buildpack": Preparing directory /builder/outputs
-Step #1 - "pre-buildpack": Preparing directory /platform/env
-Step #1 - "pre-buildpack": Passing build environment variable BUILDER_OUTPUT to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_RUNTIME to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_LABEL_BUILDER_VERSION to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_LABEL_BUILDER_IMAGE to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_LABEL_RUN_IMAGE to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_LABEL_SOURCE to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_USE_SERVERLESS_RUNTIMES_TARBALLS to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_RUNTIME_IMAGE_REGION to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_RUNTIME_VERSION to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable X_GOOGLE_SKIP_RUNTIME_LAUNCH to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_BUILD_ENV to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_BUILD_UNIVERSE to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_TPC_TARBALL_PROJECT to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_TPC_HOSTNAME to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GAE_APP_ENGINE_APIS to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable GOOGLE_ENTRYPOINT to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable X_GOOGLE_TARGET_PLATFORM to buildpacks
-Step #1 - "pre-buildpack": Passing build environment variable X_GOOGLE_SET_NODE_HEAP_SIZE to buildpacks
-Finished Step #1 - "pre-buildpack"
-Starting Step #2 - "build"
-Step #2 - "build": Already have image: asia-south1-docker.pkg.dev/serverless-runtimes/google-24-full/builder/nodejs:nodejs_20260924a_RC00
-Step #2 - "build": Warning: No cached data will be used, no cache specified.
-Step #2 - "build": ===> ANALYZING
-Step #2 - "build": Image with name "asia-south1-docker.pkg.dev/ngonabarun/gae-standard/app/api-staging:operation-1791005854370-65ce90bbd8c39-a3bbd101-783c1eb3" not found
-Step #2 - "build": ===> DETECTING
-Step #2 - "build": target distro name/version labels not found, reading /etc/os-release file
-Step #2 - "build": google.nodejs.runtime    1.0.0
-Step #2 - "build": google.nodejs.npm        1.1.1
-Step #2 - "build": google.nodejs.appengine  0.9.0
-Step #2 - "build": google.utils.label-image 0.0.2
-Step #2 - "build": ===> RESTORING
-Step #2 - "build": Skipping buildpack layer analysis
-Step #2 - "build": ===> BUILDING
-Step #2 - "build": target distro name/version labels not found, reading /etc/os-release file
-Step #2 - "build": === Node.js - Runtime Using Runner (google.nodejs.runtime@1.0.0) ===
-Step #2 - "build": Using runtime version from GOOGLE_RUNTIME_VERSION: 24.19.0
-Step #2 - "build": Using exact version 24.19.0 for Node.js
-Step #2 - "build": ***** CACHE MISS: "nodejs"
-Step #2 - "build": Installing Node.js v24.19.0.
-Step #2 - "build": Runtime successfully downloaded from asia-south1-docker.pkg.dev/serverless-runtimes/runtimes-ubuntu2404/nodejs:24.19.0
-Step #2 - "build": Installing the heapsize.sh exec.d script.
-Step #2 - "build": === Node.js - Npm Using Runner (google.nodejs.npm@1.1.1) ===
-Step #2 - "build": ***** CACHE MISS: "npm_modules"
-Step #2 - "build": Installing application dependencies.
-Step #2 - "build": --------------------------------------------------------------------------------
-Step #2 - "build": Running "npm ci --quiet --no-fund --no-audit (NODE_ENV=development)"
-Step #2 - "build": npm warn deprecated urix@0.1.0: Please see https://github.com/lydell/urix#deprecated
-Step #2 - "build": npm warn deprecated source-map-url@0.4.1: See https://github.com/lydell/source-map-url#deprecated
-Step #2 - "build": npm warn deprecated source-map-resolve@0.5.3: See https://github.com/lydell/source-map-resolve#deprecated
-Step #2 - "build": npm warn deprecated resolve-url@0.2.1: https://github.com/lydell/resolve-url#deprecated
-Step #2 - "build": npm warn deprecated lodash.template@4.18.1: This package is deprecated. Use https://socket.dev/npm/package/eta instead.
-Step #2 - "build": npm warn deprecated lodash.isequal@4.5.0: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
-Step #2 - "build": npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
-Step #2 - "build": npm warn deprecated gulp-header@1.8.12: Removed event-stream from gulp-header
-Step #2 - "build": npm warn deprecated fstream@1.0.12: This package is no longer supported.
-Step #2 - "build": npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
-Step #2 - "build": npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
-Step #2 - "build": npm warn deprecated crypto-js@4.2.0: Active development of CryptoJS has been discontinued. This library is no longer maintained.
-Step #2 - "build": npm warn deprecated json-schema-ref-parser@6.1.0: Please switch to @apidevtools/json-schema-ref-parser
-Step #2 - "build": npm warn deprecated glob@10.4.5: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
-Step #2 - "build": npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
-Step #2 - "build": npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
-Step #2 - "build": npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
-Step #2 - "build": npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
-Step #2 - "build": npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
-Step #2 - "build": npm warn deprecated rimraf@2.7.1: Rimraf versions prior to v4 are no longer supported
-Step #2 - "build": npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
-Step #2 - "build": npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
-Step #2 - "build": npm warn deprecated cron-parser@4.9.0: v4 is no longer maintained, upgrade to v5
-Step #2 - "build": npm warn deprecated uuid@8.3.2: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
-Step #2 - "build": npm warn deprecated uuid@8.3.2: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
-Step #2 - "build": npm warn deprecated uuid@9.0.1: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
-Step #2 - "build": npm warn deprecated uuid@9.0.1: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
-Step #2 - "build": npm warn deprecated uuid@9.0.1: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
-Step #2 - "build": npm warn deprecated highlight.js@9.18.5: Support has ended for 9.x series. Upgrade to @latest
-Step #2 - "build": npm warn deprecated @faker-js/faker@5.5.3: Please update to a newer version.
-Step #2 - "build": 
-Step #2 - "build": added 1540 packages in 40s
-Step #2 - "build": npm warn allow-scripts 8 packages have install scripts not yet covered by allowScripts:
-Step #2 - "build": npm warn allow-scripts   @firebase/util@1.15.3 (postinstall: node ./postinstall.js)
-Step #2 - "build": npm warn allow-scripts   @prisma/engines@7.10.0 (postinstall: node scripts/postinstall.js)
-Step #2 - "build": npm warn allow-scripts   @scarf/scarf@1.4.0 (postinstall: node ./report.js)
-Step #2 - "build": npm warn allow-scripts   bcrypt@6.0.0 (install: node-gyp-build)
-Step #2 - "build": npm warn allow-scripts   highlight.js@9.18.5 (postinstall: node deprecated.js)
-Step #2 - "build": npm warn allow-scripts   msgpackr-extract@3.0.4 (install: node-gyp-build-optional-packages)
-Step #2 - "build": npm warn allow-scripts   prisma@7.10.0 (preinstall: node scripts/preinstall-entry.js)
-Step #2 - "build": npm warn allow-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
-Step #2 - "build": npm warn allow-scripts
-Step #2 - "build": npm warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to review, or `npm approve-scripts <pkg>` to allow.
-Step #2 - "build": Done "npm ci --quiet --no-fund --no-audit (NODE_ENV=development)" (40.398626525s)
-Step #2 - "build": --------------------------------------------------------------------------------
-Step #2 - "build": Running "npm run build"
-Step #2 - "build": 
-Step #2 - "build": > ngo-nabarun-be@1.0.0 build
-Step #2 - "build": > npm run clean && npm run generate:db && nest build
-Step #2 - "build": 
-Step #2 - "build": 
-Step #2 - "build": > ngo-nabarun-be@1.0.0 clean
-Step #2 - "build": > rimraf dist && rimraf src/shared/persistence/prisma
-Step #2 - "build": 
-Step #2 - "build": 
-Step #2 - "build": > ngo-nabarun-be@1.0.0 generate:db
-Step #2 - "build": > npx prisma generate
-Step #2 - "build": 
-Step #2 - "build": Failed to load config file "/workspace" as a TypeScript/JavaScript module. Error: PrismaConfigEnvError: Cannot resolve environment variable: DATABASE_URL.
-Step #2 - "build": Done "npm run build" (2.500372106s)
-Step #2 - "build": --------------------------------------------------------------------------------
-Step #2 - "build": failed to build: (error ID: 1a2262f3):
-Step #2 - "build": > ngo-nabarun-be@1.0.0 build
-Step #2 - "build": > npm run clean && npm run generate:db && nest build
-Step #2 - "build": 
-Step #2 - "build": 
-Step #2 - "build": > ngo-nabarun-be@1.0.0 clean
-Step #2 - "build": > rimraf dist && rimraf src/shared/persistence/prisma
-Step #2 - "build": 
-Step #2 - "build": 
-Step #2 - "build": > ngo-nabarun-be@1.0.0 generate:db
-Step #2 - "build": > npx prisma generate
-Step #2 - "build": 
-Step #2 - "build": Failed to load config file "/workspace" as a TypeScript/JavaScript module. Error: PrismaConfigEnvError: Cannot resolve environment variable: DATABASE_URL.
-Step #2 - "build": NOTE: Running the default build script can be skipped by passing the empty environment variable "GOOGLE_NODE_RUN_SCRIPTS=" to the build
-Step #2 - "build": ERROR: failed to build: exit status 1
-Finished Step #2 - "build"
-ERROR
-ERROR: build step 2 "asia-south1-docker.pkg.dev/serverless-runtimes/google-24-full/builder/nodejs:nodejs_20260924a_RC00" failed: step exited with non-zero status: 51
+OK
+...........::warning::Invalid commit title: 'update validation' - treating it as 'chore'
+...::warning::Invalid pull request title: 'update stuff' - treating it as 'chore'
+...........::warning::Invalid commit title: 'wip' - treating it as 'chore'
+.........::warning::Invalid commit title: 'wip' - treating it as 'chore'
+.
+----------------------------------------------------------------------
+Ran 35 tests in 0.015s
+
+OK
+Workflow guardrails failed:
+  - .github/workflows/ops-deploy-backend.yml:174: cloud and environment secrets must be resolved by the environment-bound job
+  - .github/workflows/ops-deploy-backend.yml:175: cloud and environment secrets must be resolved by the environment-bound job
+  - .github/workflows/ops-deploy-backend.yml:176: cloud and environment secrets must be resolved by the environment-bound job
+Error: Process completed with exit code 1.

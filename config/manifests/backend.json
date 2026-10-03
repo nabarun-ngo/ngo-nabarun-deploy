@@ -40,7 +40,7 @@
   },
   "database": {
     "migrate": true,
-    "command": "npm ci && npm run migrate:deploy"
+    "command": "npm run migrate:deploy"
   },
   "healthCheck": {
     "enabled": true,

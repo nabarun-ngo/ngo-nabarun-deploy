@@ -14,14 +14,62 @@ if [[ -z "${WORK_DIR:-}" ]]; then
   echo "::error::working_directory is required."
   exit 1
 fi
-cd "$WORK_DIR" || exit 1
 
+if [[ -z "${DB_COMMAND:-}" ]]; then
+  echo "::error::DB_COMMAND is required."
+  exit 1
+fi
+
+echo "::notice::Changing to working directory: ${WORK_DIR}"
+cd "$WORK_DIR" || {
+  echo "::error::Unable to cd into working directory: ${WORK_DIR}"
+  exit 1
+}
+echo "Current directory: $(pwd)"
+
+# ---------------------------------------------------------------------------
+# Install Node dependencies (only if the bundle contains a package.json)
+# ---------------------------------------------------------------------------
+if [[ -f package.json ]]; then
+  echo "::notice::package.json found in $(pwd), installing npm dependencies"
+
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "::error::package.json exists but npm is not installed or not on PATH."
+    exit 1
+  fi
+
+  echo "Node version: $(node --version 2>/dev/null || echo 'not found')"
+  echo "npm version:  $(npm --version)"
+
+  install_start=$SECONDS
+  echo "::group::npm install"
+  if npm install --no-audit --no-fund --no-progress; then
+    echo "::endgroup::"
+    echo "::notice::npm install completed in $((SECONDS - install_start))s"
+  else
+    install_status=$?
+    echo "::endgroup::"
+    echo "::error::npm install failed with exit code ${install_status} after $((SECONDS - install_start))s"
+    exit "$install_status"
+  fi
+else
+  echo "::notice::No package.json found in $(pwd), skipping npm install"
+fi
+
+# ---------------------------------------------------------------------------
+# Make sure the bundled Doppler binary is executable
+# ---------------------------------------------------------------------------
 # actions/upload-artifact / download-artifact do not preserve file modes,
 # so make sure the bundled Doppler binary is executable.
 if [[ -f bin/doppler && ! -x bin/doppler ]]; then
   echo "::warning::bin/doppler is not executable, fixing permissions"
   chmod +x bin/doppler
 fi
+
+# ---------------------------------------------------------------------------
+# Run the migration
+# ---------------------------------------------------------------------------
+migration_start=$SECONDS
 
 if [[ -x "bin/doppler" && -n "${DOPPLER_TOKEN:-}" ]]; then
   echo "::notice::Running migration via Doppler CLI (token present, binary present)"
@@ -51,3 +99,5 @@ else
   echo "::endgroup::"
   bash -euo pipefail -c "$DB_COMMAND"
 fi
+
+echo "::notice::Migration completed successfully in $((SECONDS - migration_start))s"

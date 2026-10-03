@@ -26,7 +26,7 @@
     "install": "npm ci",
     "command": "DATABASE_URL=demo npm run build",
     "outputPath": "dist",
-    "bundleIncludes": ["prisma", "prisma.config.ts","node_modules/prisma"]
+    "bundleIncludes": ["prisma", "prisma.config.ts"]
   },
   "deploy": {
     "platform": "gae",
@@ -40,7 +40,7 @@
   },
   "database": {
     "migrate": true,
-    "command": "npx prisma migrate deploy"
+    "command": "npm ci && npm run migrate:deploy"
   },
   "healthCheck": {
     "enabled": true,

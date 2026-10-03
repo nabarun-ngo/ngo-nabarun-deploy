@@ -12,12 +12,12 @@ Replace `YOUR_ORG/deploy-platform` in examples with this repository’s `owner/n
 
 | Workflow | Role | Doc |
 |----------|------|-----|
-| [`reusable-ci-pr-check.yml`](.github/workflows/reusable-ci-pr-check.yml) | PR install, lint, type-check, build, optional tests | [docs/workflows/reusable-ci-pr-check.md](docs/workflows/reusable-ci-pr-check.md) |
+| [`reusable-ci-pr-check.yml`](.github/workflows/reusable-ci-pr-check.yml) | Fail an invalid PR title, warn on branch commits, then install, lint, type-check, build, optional tests | [docs/workflows/reusable-ci-pr-check.md](docs/workflows/reusable-ci-pr-check.md) |
 | [`reusable-ci-commit-check.yml`](.github/workflows/reusable-ci-commit-check.yml) | Reject pull requests whose titles are not conventional commits | [docs/workflows/reusable-ci-commit-check.md](docs/workflows/reusable-ci-commit-check.md) |
 | [`reusable-ci-changeset-check.yml`](.github/workflows/reusable-ci-changeset-check.yml) | PR: require a Changeset when `packages/**` changes | [docs/workflows/reusable-ci-changeset-check.md](docs/workflows/reusable-ci-changeset-check.md) |
-| [`reusable-ci-publish.yml`](.github/workflows/reusable-ci-publish.yml) | Changesets version and optional npm publish | [docs/workflows/reusable-ci-publish.md](docs/workflows/reusable-ci-publish.md) |
-| [`reusable-ci-tag-release.yml`](.github/workflows/reusable-ci-tag-release.yml) | App repos: bare semver git tag and GitHub Release | [docs/workflows/reusable-ci-tag-release.md](docs/workflows/reusable-ci-tag-release.md) |
-| [`reusable-ci-release-event.yml`](.github/workflows/reusable-ci-release-event.yml) | App repos: publish a release fact to this repo | [docs/workflows/reusable-ci-release-event.md](docs/workflows/reusable-ci-release-event.md) |
+| [`reusable-ci-npm-publish.yml`](.github/workflows/reusable-ci-npm-publish.yml) | Changesets version and optional npm publish | [docs/workflows/reusable-ci-npm-publish.md](docs/workflows/reusable-ci-npm-publish.md) |
+| [`reusable-ci-tag-release.yml`](.github/workflows/reusable-ci-tag-release.yml) | App repos: bare semver tag from commits and pull request titles, then a GitHub Release | [docs/workflows/reusable-ci-tag-release.md](docs/workflows/reusable-ci-tag-release.md) |
+| [`reusable-event-dispatch.yml`](.github/workflows/reusable-event-dispatch.yml) | App repos: publish a release fact to this repo | [docs/workflows/reusable-event-dispatch.md](docs/workflows/reusable-event-dispatch.md) |
 | [`reusable-setup-context.yml`](.github/workflows/reusable-setup-context.yml) | Normalize dispatch/schedule inputs for deploys | [docs/workflows/reusable-setup-context.md](docs/workflows/reusable-setup-context.md) |
 | [`reusable-deploy-gae-node.yml`](.github/workflows/reusable-deploy-gae-node.yml) | Build, migrate, deploy Node.js to App Engine | [docs/workflows/reusable-deploy-gae-node.md](docs/workflows/reusable-deploy-gae-node.md) |
 | [`reusable-deploy-firebase-node.yml`](.github/workflows/reusable-deploy-firebase-node.yml) | Build and deploy Node.js to Firebase Hosting | [docs/workflows/reusable-deploy-firebase-node.md](docs/workflows/reusable-deploy-firebase-node.md) |
@@ -65,6 +65,10 @@ The checks reject mutable action branches, external checkouts without a separate
 path, missing workflow permissions, unresolved scheduled manifests, unsafe
 post-increment under `set -e`, caller-side environment credential mapping, and
 destructive cleanup that does not default to dry-run.
+
+## App Engine deploy
+
+How the staged bundle, Cloud Build, health check, and traffic promotion fit together: [docs/workflows/reusable-deploy-gae-node.md](docs/workflows/reusable-deploy-gae-node.md). The runtime template is [`config/platforms/gae/app.yaml.tpl`](config/platforms/gae/app.yaml.tpl). `GOOGLE_NODE_RUN_SCRIPTS` is empty there so Cloud Build packages the already-built `dist/` and does not run `npm run build` again.
 
 ## Firebase config templates
 
@@ -116,7 +120,7 @@ or another declared secret must be able to read that repository when the
 caller is a different repo. `github.token` is enough when the caller is this
 repository.
 
-`reusable-ci-publish` and `reusable-ci-tag-release` copy
+`reusable-ci-npm-publish` and `reusable-ci-tag-release` copy
 [`scripts/release_model.py`](scripts/release_model.py) from `platform/scripts/`
 to `$RUNNER_TEMP/release-model/release_model.py` and leave the checkout in
 place. `reusable-ci-changeset-check` and `reusable-ci-commit-check` still
@@ -138,7 +142,6 @@ Building blocks used by the reusables (not called from app repos directly):
 
 | Action | Purpose |
 |--------|---------|
-| [decide-release-deployment](.github/actions/decide-release-deployment/action.yml) | Match a `Release-Created` event to a manifest and decide deploy or skip |
 | [log-run-context](.github/actions/log-run-context/action.yml) | Print run context and a step summary |
 | [stage-version-command](.github/actions/stage-version-command/action.yml) | Stage the Changesets version script |
 | [inspect-pending-changesets](.github/actions/inspect-pending-changesets/action.yml) | Count pending changeset files |

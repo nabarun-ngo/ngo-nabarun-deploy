@@ -1,6 +1,6 @@
-# reusable-ci-publish
+# reusable-ci-npm-publish
 
-Source: [`.github/workflows/reusable-ci-publish.yml`](../../.github/workflows/reusable-ci-publish.yml)
+Source: [`.github/workflows/reusable-ci-npm-publish.yml`](../../.github/workflows/reusable-ci-npm-publish.yml)
 
 Reusable **Changesets** pipeline for library repos. Two jobs:
 
@@ -65,7 +65,7 @@ permissions:
 
 jobs:
   publish:
-    uses: YOUR_ORG/deploy-platform/.github/workflows/reusable-ci-publish.yml@main
+    uses: YOUR_ORG/deploy-platform/.github/workflows/reusable-ci-npm-publish.yml@main
     with:
       templates_repository: YOUR_ORG/deploy-platform
       node_version: '22'

@@ -1,4 +1,4 @@
-name: Reusable — CI publish release event
+name: Reusable — Event dispatch
 
 # workflow_call only. Application repos call this after reusable-ci-tag-release
 # reports created=true. It publishes one release fact to the platform repository

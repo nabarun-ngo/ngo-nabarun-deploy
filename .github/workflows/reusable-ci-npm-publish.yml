@@ -1,4 +1,4 @@
-name: Reusable — CI Changesets version / npm
+name: Reusable — CI npm publish
 
 # workflow_call only. Changesets library repos only.
 # develop prepares and publishes beta versions. main prepares and publishes stable versions.

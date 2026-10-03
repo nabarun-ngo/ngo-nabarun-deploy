@@ -3,8 +3,9 @@
 
 No version/changelog commit is made and nothing is pushed to the branch.
 The next version is computed from the latest tag reachable from the current
-branch (``git tag --merged HEAD``) plus the commits made since that tag, and
-the resulting tag is created on the current HEAD.
+branch (``git tag --merged HEAD``), the commits made since that tag, and the
+titles of the pull requests that introduced those commits. The highest bump
+wins. The resulting tag is created on the current HEAD.
 
 The calling workflow stages release_model.py on PYTHONPATH and checks out
 the application repository (with full history and tags, e.g. ``fetch-depth: 0``)
@@ -25,6 +26,7 @@ import release_model
 
 TAG_RE = re.compile(r"^\d+\.\d+\.\d+(-(alpha|beta|rc)\.[1-9]\d*)?$")
 DEFAULT_LAST_STABLE = "0.0.0"
+MAX_PULL_REQUEST_TITLE_LOOKUPS = 100
 
 
 def notice(message: str) -> None:
@@ -78,15 +80,55 @@ def remote_tag_exists(version: str) -> bool:
     return bool(result.stdout.strip())
 
 
+def history_range(baseline: str | None) -> str:
+    if not baseline:
+        return "HEAD"
+    ref = baseline
+    if run(["git", "rev-parse", "-q", "--verify", f"refs/tags/{baseline}^{{}}"], check=False).returncode != 0:
+        ref = f"v{baseline}"
+    return f"{ref}..HEAD"
+
+
 def commits_since(baseline: str | None) -> list[str]:
-    if baseline:
-        ref = baseline
-        if run(["git", "rev-parse", "-q", "--verify", f"refs/tags/{baseline}^{{}}"], check=False).returncode != 0:
-            ref = f"v{baseline}"
-        log = run(["git", "log", "--format=%B%x1f", f"{ref}..HEAD"]).stdout
-    else:
-        log = run(["git", "log", "--format=%B%x1f", "HEAD"]).stdout
+    log = run(["git", "log", "--format=%B%x1f", history_range(baseline)]).stdout
     return [item.strip("\n") for item in log.split("\x1f") if item.strip()]
+
+
+def pull_request_titles(baseline: str | None) -> list[str]:
+    """Titles of pull requests associated with commits since ``baseline``.
+
+    Only the newest commits are looked up. Older titles are omitted with a
+    notice; those commits still contribute through their own messages.
+    """
+    repository = os.environ["GH_REPO"]
+    shas = [sha for sha in run(["git", "rev-list", history_range(baseline)]).stdout.split() if sha]
+    if len(shas) > MAX_PULL_REQUEST_TITLE_LOOKUPS:
+        notice(
+            "Looking up pull request titles for the "
+            f"{MAX_PULL_REQUEST_TITLE_LOOKUPS} newest commits. "
+            "Older pull request titles are not included."
+        )
+        shas = shas[:MAX_PULL_REQUEST_TITLE_LOOKUPS]
+    titles: list[str] = []
+    seen: set[str] = set()
+    for sha in shas:
+        raw = run(
+            [
+                "gh",
+                "api",
+                "-H",
+                "Accept: application/vnd.github+json",
+                f"repos/{repository}/commits/{sha}/pulls",
+                "--jq",
+                ".[].title",
+            ]
+        ).stdout
+        for title in raw.splitlines():
+            cleaned = title.strip()
+            if cleaned and cleaned not in seen:
+                seen.add(cleaned)
+                titles.append(cleaned)
+    return titles
 
 
 def fallback_version() -> str:
@@ -120,7 +162,9 @@ def plan() -> dict:
     }
     try:
         if not payload["explicit_version"]:
-            payload["commits"] = commits_since(release_model.select_baseline(payload))
+            baseline = release_model.select_baseline(payload)
+            payload["commits"] = commits_since(baseline)
+            payload["pull_request_titles"] = pull_request_titles(baseline)
         return release_model.plan_release(payload)
     except ValueError as exc:
         fail(str(exc))

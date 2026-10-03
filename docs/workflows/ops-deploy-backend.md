@@ -2,7 +2,7 @@
 
 Source: [`.github/workflows/ops-deploy-backend.yml`](../../.github/workflows/ops-deploy-backend.yml)
 
-Deploy the backend manifest to App Engine through [reusable-deploy-gae-node](reusable-deploy-gae-node.md).
+Deploy the backend manifest to App Engine through [reusable-deploy-gae-node](reusable-deploy-gae-node.md). That page describes the bundle, what Cloud Build receives, and where a failed run stops.
 
 Triggers: `workflow_dispatch`, and `repository_dispatch` type `Trigger-Deploy-Backend`. An application release does not start this workflow.
 

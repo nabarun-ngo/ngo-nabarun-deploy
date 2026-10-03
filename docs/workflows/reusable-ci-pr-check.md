@@ -2,9 +2,24 @@
 
 Source: [`.github/workflows/reusable-ci-pr-check.yml`](../../.github/workflows/reusable-ci-pr-check.yml)
 
-Reusable **PR check** for application and library repos. Runs install → type-check → lint → build → optional unit tests. The job name **Build check** is what branch protection should require.
+Reusable **PR check** for application and library repos. Runs a semantic commit check, then install → type-check → lint → build → optional unit tests. The job name **Build check** is what branch protection should require.
 
 Lint and type-check are skipped if the npm script is missing.
+
+## Semantic commit messages
+
+Only the pull request title must be a Conventional Commit. An invalid or empty title fails the job. Commit subjects on the branch (`wip`, `fix typo`, and similar) are `::warning::` annotations and do not fail the job. This check does not calculate the version. [reusable-ci-tag-release](reusable-ci-tag-release.md) does that after merge, from both the commit subjects and the pull request titles, and the higher bump wins.
+
+| Subject | Version |
+|---------|---------|
+| `fix:` | patch |
+| `feat:` | minor |
+| `feat!:` or a body line `BREAKING CHANGE:` | major |
+| `docs:`, `chore:`, `ci:` | no release |
+
+A scope is optional (`feat(api): add filter`). Merge commits, `chore(release):`, `[skip ci]`, and `[skip actions]` are ignored. The check runs only when the caller event has a pull request base ref.
+
+When the title fails, edit it in GitHub. That does not rewrite history. If the pull request is already merged, do not rewrite `main` or `develop`. Open a follow-up pull request with a valid title.
 
 ## Who calls it
 

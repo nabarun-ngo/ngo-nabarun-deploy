@@ -4,8 +4,10 @@ name: Reusable — CI tag and GitHub Release
 # Creates a bare semver tag (no v prefix), then a GitHub Release.
 # version input set: tag exactly that version when the ref is the stable or prerelease branch.
 # version input empty: compute from version_file —
-#   develop: beta from conventional commits (fix=patch, feat=minor, breaking=major).
-#   main: promote the beta line to stable, or bump a hotfix from commits on main.
+#   develop: beta from conventional commits and merged pull request titles
+#   (fix=patch, feat=minor, breaking=major). The highest bump wins.
+#   main: promote the beta line to stable, or bump a hotfix from commits or
+#   pull request titles on main.
 # A release commit updates package.json and CHANGELOG.md and contains [skip ci].
 # A tag that already exists on another commit fails the job. Does not deploy or publish to npm.
 

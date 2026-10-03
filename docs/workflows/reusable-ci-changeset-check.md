@@ -4,11 +4,11 @@ Source: [`.github/workflows/reusable-ci-changeset-check.yml`](../../.github/work
 
 PR gate for **Changesets** library repos. If files matching `packages_filter` changed, the PR must include a changeset vs the base branch (`npx changeset status --since=origin/<base>`).
 
-Does not version or publish. Pair with [reusable-ci-publish](reusable-ci-publish.md).
+Does not version or publish. Pair with [reusable-ci-npm-publish](reusable-ci-npm-publish.md).
 
 A same-repository pull request from `changeset-release/<base>` is the generated Version Packages pull request. That pull request skips the requirement for another Changeset. Its title is still checked. Feature pull requests are checked regardless of who opens them.
 
-**Commit title policy:** the pull request title must be a conventional commit (`fix:`, `feat:`, `feat!:`, `docs:`, `chore:`, or `ci:`) — that is a hard failure, since it is what the release/changelog actually uses and is editable in the GitHub UI without touching history. Individual commit messages pushed to the branch (`wip`, `address review comments`, ...) are reported as `::warning::` annotations, not failures — fixing those would require an amend/rebase and force-push, and they are discarded on merge, so they do not need to block the pull request. Only the title (and, when a changeset is required, its declared bump) determine the release version.
+**Commit title policy:** the pull request title must be a Conventional Commit (`fix:`, `feat:`, `feat!:`, `docs:`, `chore:`, or `ci:`). An invalid title is a hard failure, and it can be edited in the GitHub UI. Commit subjects on the branch (`wip`, `address review comments`, ...) are `::warning::` annotations and do not fail the job. When a changeset is required, the expected bump is the highest of the title and the valid commit subjects. That bump must match the changeset. Invalid commit subjects add no bump. Library versions still come from Changesets, not from [reusable-ci-tag-release](reusable-ci-tag-release.md).
 
 ## Who calls it
 

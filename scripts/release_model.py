@@ -125,7 +125,33 @@ def line_bump(last_stable: dict, beta_base: dict) -> str:
 
 
 def releasable_subjects(commits: list[dict]) -> list[str]:
-    return [commit["subject"] for commit in commits if commit.get("bump")]
+    seen: set[str] = set()
+    subjects: list[str] = []
+    for commit in commits:
+        subject = commit.get("subject")
+        if commit.get("bump") and subject not in seen:
+            seen.add(subject)
+            subjects.append(subject)
+    return subjects
+
+
+def classify_for_release(messages: list[str], default_type: str, kind: str) -> list[dict]:
+    """Parse commit subjects or pull request titles for one release plan.
+
+    A non-conventional message does not abort the release. It is warned about
+    and classified as ``default_type``, which contributes no bump when that
+    type is docs, chore, or ci.
+    """
+    classified = [parse_commit(message, default_type=default_type) for message in messages]
+    for item in classified:
+        if not item["valid"]:
+            # stderr, because stdout of `plan` is parsed as JSON
+            print(
+                f"::warning::Invalid {kind}: '{item['subject']}' "
+                f"- treating it as '{default_type}'",
+                file=sys.stderr,
+            )
+    return classified
 
 
 def select_baseline(payload: dict) -> str | None:
@@ -155,7 +181,12 @@ def select_baseline(payload: dict) -> str | None:
 
 
 def plan_release(payload: dict) -> dict:
-    """Plan one application release from tags and commits since the latest tag."""
+    """Plan one application release from tags, commits, and pull request titles.
+
+    ``commits`` are the git messages since the latest tag. ``pull_request_titles``
+    are the titles of pull requests merged by those commits. The bump is the
+    highest of the two, so a title can raise the version and cannot lower it.
+    """
     branch = payload["branch"]
     stable_branch = payload.get("stable_branch", "main")
     prerelease_branch = payload.get("prerelease_branch", "develop")
@@ -186,25 +217,21 @@ def plan_release(payload: dict) -> dict:
 
     # Commit messages are immutable, so a non-conventional message must not
     # abort the release. Warn and classify it with a default type instead.
+    # Pull request titles are included the same way: the highest bump wins.
     default_type = payload.get("default_commit_type", "chore")
     if default_type not in TYPE_BUMP:
         raise ValueError(
             f"default_commit_type must be one of: {', '.join(TYPE_BUMP)}"
         )
-    commits = [
-        parse_commit(message, default_type=default_type)
-        for message in payload.get("commits", [])
-    ]
-    for commit in commits:
-        if not commit["valid"]:
-            # stderr, because stdout of `plan` is parsed as JSON
-            print(
-                f"::warning::Invalid commit title: '{commit['subject']}' "
-                f"- treating it as '{default_type}'",
-                file=sys.stderr,
-            )
-
-    new_bump = highest_bump(commits)
+    commits = classify_for_release(payload.get("commits") or [], default_type, "commit title")
+    titles = classify_for_release(
+        payload.get("pull_request_titles") or [],
+        default_type,
+        "pull request title",
+    )
+    classified = [*commits, *titles]
+    new_bump = highest_bump(classified)
+    subjects = releasable_subjects(classified)
     last_stable = parse_version(payload["last_stable"])
     if last_stable["tag"]:
         raise ValueError("last_stable must be a stable X.Y.Z version")
@@ -213,7 +240,10 @@ def plan_release(payload: dict) -> dict:
     latest = max(merged, key=lambda item: version_sort_key(format_version(item)), default=None)
     if branch == prerelease_branch:
         if new_bump is None:
-            return {"action": "skip", "reason": "No releasable commits since the latest tag"}
+            return {
+                "action": "skip",
+                "reason": "No releasable commits or pull request titles since the latest tag",
+            }
         if latest and latest["tag"] == tag_name and BUMP_RANK[new_bump] <= BUMP_RANK[line_bump(last_stable, latest)]:
             version = f"{format_stable(latest)}-{tag_name}.{latest['num'] + 1}"
         else:
@@ -222,7 +252,7 @@ def plan_release(payload: dict) -> dict:
             "action": "release",
             "version": version,
             "prerelease": True,
-            "commits": releasable_subjects(commits),
+            "commits": subjects,
         }
 
     betas = [
@@ -239,10 +269,13 @@ def plan_release(payload: dict) -> dict:
             "commits": [f"Promote {format_version(best_beta)}"],
         }
     if new_bump is None:
-        return {"action": "skip", "reason": "No releasable commits since the latest stable tag"}
+        return {
+            "action": "skip",
+            "reason": "No releasable commits or pull request titles since the latest stable tag",
+        }
     base = best_beta if best_beta is not None else last_stable
     version = format_stable(apply_bump(base, new_bump))
-    return {"action": "release", "version": version, "prerelease": False, "commits": releasable_subjects(commits)}
+    return {"action": "release", "version": version, "prerelease": False, "commits": subjects}
 
 
 def format_version(version: dict) -> str:
@@ -298,14 +331,15 @@ def parse_changeset_bumps(text: str) -> list[str]:
 def validate_pull_request(payload: dict) -> dict[str, list[str]]:
     """Return release-policy findings for one pull request as {"errors": [...], "warnings": [...]}.
 
-    The pull request title is what actually becomes the release/changelog
-    entry and is trivially editable in the GitHub UI with no history rewrite,
-    so an invalid title is a hard error. Individual raw commit messages
-    (`wip`, `fix typo`, ...) commonly do not follow the convention and fixing
-    them requires an amend/rebase + force-push; they are reported as warnings
-    so they are visible without blocking the merge. Only the title and the
-    changeset bump (when not skipped) determine the release version, so
-    warning-only commits do not affect that calculation.
+    An invalid pull request title is a hard error. The title is editable in
+    the GitHub UI and does not require a history rewrite. Individual commit
+    subjects that are not conventional commits are warnings and do not block
+    the pull request.
+
+    When changeset validation runs, the expected bump is the highest of the
+    title and the valid commit subjects, and it must match the changeset.
+    Invalid subjects contribute no bump. Application version planning is
+    separate: ``plan_release`` also reads merged pull request titles.
     """
     errors = []
     warnings = []

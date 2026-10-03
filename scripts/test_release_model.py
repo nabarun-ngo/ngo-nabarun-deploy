@@ -82,9 +82,67 @@ class ReleaseModelTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             plan(branch="main", explicit_version="2.3.3-beta.1")
 
-    def test_invalid_commit_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
-            plan(commits=["update validation"])
+    def test_invalid_commit_does_not_release(self) -> None:
+        result = plan(commits=["update validation"])
+        self.assertEqual("skip", result["action"])
+
+    def test_pull_request_title_can_raise_the_bump(self) -> None:
+        result = plan(
+            commits=["fix: correct validation", "wip"],
+            pull_request_titles=["feat: add filtering"],
+        )
+        self.assertEqual("2.4.0-beta.1", result["version"])
+        self.assertEqual(
+            ["fix: correct validation", "feat: add filtering"],
+            result["commits"],
+        )
+
+    def test_pull_request_title_cannot_lower_the_bump(self) -> None:
+        result = plan(
+            commits=["feat: add filtering"],
+            pull_request_titles=["fix: correct validation"],
+        )
+        self.assertEqual("2.4.0-beta.1", result["version"])
+
+    def test_title_releases_when_commits_are_not_conventional(self) -> None:
+        result = plan(commits=["wip"], pull_request_titles=["feat: add filtering"])
+        self.assertEqual("2.4.0-beta.1", result["version"])
+        self.assertEqual(["feat: add filtering"], result["commits"])
+
+    def test_duplicate_title_and_commit_are_listed_once(self) -> None:
+        result = plan(
+            commits=["feat: add filtering"],
+            pull_request_titles=["feat: add filtering"],
+        )
+        self.assertEqual(["feat: add filtering"], result["commits"])
+
+    def test_invalid_title_does_not_change_a_fix_bump(self) -> None:
+        result = plan(
+            commits=["fix: correct validation"],
+            pull_request_titles=["update stuff"],
+        )
+        self.assertEqual("2.3.3-beta.1", result["version"])
+        self.assertEqual(["fix: correct validation"], result["commits"])
+
+    def test_main_chore_title_still_promotes_beta(self) -> None:
+        result = plan(
+            branch="main",
+            merged_tags=["2.3.2", "2.3.3-beta.2"],
+            commits=["Merge pull request #10 from develop"],
+            pull_request_titles=["chore: promote develop"],
+        )
+        self.assertEqual("2.3.3", result["version"])
+        self.assertFalse(result["prerelease"])
+
+    def test_main_fix_title_bumps_instead_of_promoting(self) -> None:
+        result = plan(
+            branch="main",
+            merged_tags=["2.3.2", "2.3.3-beta.2"],
+            commits=["Merge pull request #10 from develop"],
+            pull_request_titles=["fix: correct production validation"],
+        )
+        self.assertEqual("2.3.4", result["version"])
+        self.assertFalse(result["prerelease"])
 
     def test_library_pr_requires_matching_changeset_bump(self) -> None:
         result = release_model.validate_pull_request({

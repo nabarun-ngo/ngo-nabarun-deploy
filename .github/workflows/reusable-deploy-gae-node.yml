@@ -61,7 +61,7 @@ on:
         description: Maximum number of instances for automatic scaling. Defaults to 10.
         type: string
         required: false
-        default: '10'
+        default: '1'
       db_migrate:
         type: boolean
         required: false

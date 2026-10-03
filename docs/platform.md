@@ -115,7 +115,7 @@ Optional per manifest (`deploy.secrets.provider: "doppler"`).
 | Point | When | How |
 |-------|------|-----|
 | Build-time (frontend) | Firebase + Doppler | CLI wraps `npm run build` |
-| Runtime (GAE) | `bundleCli: true` | Binary in artifact; `start.sh` uses `doppler run` |
+| Runtime (GAE) | `bundleCli: true` | Binary in artifact; `start.sh` uses `doppler run`. Deploy path, Cloud Build source, and failure points: [reusable-deploy-gae-node](workflows/reusable-deploy-gae-node.md). |
 | Migration | `database.migrate: true` | `doppler run --` migrate command |
 | Tests | `doppler_project` on the test workflow | Execute job reads environment `DOPPLER_TOKEN`; Maven `-DCONFIG_SOURCE=doppler`. Config names are `stg` / `prd`. |
 

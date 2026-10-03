@@ -2,16 +2,16 @@
 
 Source: [`.github/workflows/reusable-ci-commit-check.yml`](../../.github/workflows/reusable-ci-commit-check.yml)
 
-Pull request gate for conventional commit titles. A title or commit must use one of:
+Pull request gate for Conventional Commit subjects. A title or commit uses one of:
 
 - `fix:` patch
 - `feat:` minor
 - `feat!:` or `BREAKING CHANGE:` major
 - `docs:`, `chore:`, or `ci:` no release
 
-Library repositories also call [reusable-ci-changeset-check](reusable-ci-changeset-check.md), which checks that the declared Changeset bump matches the commit. Application repositories call this workflow and [reusable-ci-tag-release](reusable-ci-tag-release.md).
+Library repositories also call [reusable-ci-changeset-check](reusable-ci-changeset-check.md), which checks that the declared Changeset bump matches the highest bump of the title and the valid commit subjects. Application repositories call this workflow, or the same title rule inside [reusable-ci-pr-check](reusable-ci-pr-check.md), and [reusable-ci-tag-release](reusable-ci-tag-release.md).
 
-**Commit title policy:** only the pull request title is a hard failure — it is editable in the GitHub UI without touching history, and it is what release automation reads. Individual commit messages pushed to the branch (`wip`, `fix typo`, ...) are reported as `::warning::` annotations and do not fail the job; cleaning them up would need an amend/rebase and force-push, and most merge strategies discard them anyway.
+**Commit title policy:** only the pull request title is a hard failure. It is editable in the GitHub UI and does not require a history rewrite. Commit subjects on the branch (`wip`, `fix typo`, ...) are `::warning::` annotations and do not fail the job. After merge, [reusable-ci-tag-release](reusable-ci-tag-release.md) takes the highest bump among those commit subjects and the merged pull request titles. A `feat:` title can raise a release above `fix:` or non-conventional commits. A `docs:`, `chore:`, or `ci:` title cannot lower a higher commit bump.
 
 ## How the client consumes it
 

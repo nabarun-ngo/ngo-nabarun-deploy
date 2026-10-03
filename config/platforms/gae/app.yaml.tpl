@@ -1,6 +1,7 @@
 runtime: nodejs24
 service: ${GAE_SERVICE}
 
+# dist/ is compiled in GitHub Actions; stop the buildpack from re-running `npm run build`
 build_env_variables:
   GOOGLE_NODE_RUN_SCRIPTS: ""
 

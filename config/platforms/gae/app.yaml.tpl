@@ -1,6 +1,9 @@
 runtime: nodejs24
 service: ${GAE_SERVICE}
 
+build_env_variables:
+  GOOGLE_NODE_RUN_SCRIPTS: ""
+
 # Instance class and scaling — values supplied by the deploy workflow (defaults: F2, 0–10)
 instance_class: ${GAE_INSTANCE_CLASS}
 

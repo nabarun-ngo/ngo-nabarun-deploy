@@ -218,7 +218,7 @@ def plan_release(payload: dict) -> dict:
     # Commit messages are immutable, so a non-conventional message must not
     # abort the release. Warn and classify it with a default type instead.
     # Pull request titles are included the same way: the highest bump wins.
-    default_type = payload.get("default_commit_type", "chore")
+    default_type = payload.get("default_commit_type", "fix")
     if default_type not in TYPE_BUMP:
         raise ValueError(
             f"default_commit_type must be one of: {', '.join(TYPE_BUMP)}"

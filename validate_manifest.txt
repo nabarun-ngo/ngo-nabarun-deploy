@@ -1,23 +1,83 @@
- python3 scripts/test_workflow_guardrails.py
-  python3 scripts/test_release_model.py
-  python3 scripts/validate-workflow-guardrails.py
-  shell: /usr/bin/bash -e {0}
-.........
 ----------------------------------------------------------------------
-Ran 9 tests in 0.026s
+Ran 11 tests in 0.326s
 
 OK
-...........::warning::Invalid commit title: 'update validation' - treating it as 'chore'
-...::warning::Invalid pull request title: 'update stuff' - treating it as 'chore'
-...........::warning::Invalid commit title: 'wip' - treating it as 'chore'
-.........::warning::Invalid commit title: 'wip' - treating it as 'chore'
-.
+...........::warning::Invalid commit title: 'update validation' - treating it as 'fix'
+F..::warning::Invalid pull request title: 'update stuff' - treating it as 'fix'
+F..........::warning::Invalid commit title: 'wip' - treating it as 'fix'
+F........::warning::Invalid commit title: 'wip' - treating it as 'fix'
+F
+======================================================================
+FAIL: test_invalid_commit_does_not_release (__main__.ReleaseModelTests.test_invalid_commit_does_not_release)
 ----------------------------------------------------------------------
-Ran 35 tests in 0.015s
+Traceback (most recent call last):
+  File "/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.github/actions/release-model/test_release_model.py", line 87, in test_invalid_commit_does_not_release
+    self.assertEqual("skip", result["action"])
+AssertionError: 'skip' != 'release'
+- skip
++ release
 
-OK
-Workflow guardrails failed:
-  - .github/workflows/ops-deploy-backend.yml:174: cloud and environment secrets must be resolved by the environment-bound job
-  - .github/workflows/ops-deploy-backend.yml:175: cloud and environment secrets must be resolved by the environment-bound job
-  - .github/workflows/ops-deploy-backend.yml:176: cloud and environment secrets must be resolved by the environment-bound job
-Error: Process completed with exit code 1.
+
+======================================================================
+FAIL: test_invalid_title_does_not_change_a_fix_bump (__main__.ReleaseModelTests.test_invalid_title_does_not_change_a_fix_bump)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.github/actions/release-model/test_release_model.py", line 125, in test_invalid_title_does_not_change_a_fix_bump
+    self.assertEqual(["fix: correct validation"], result["commits"])
+AssertionError: Lists differ: ['fix: correct validation'] != ['fix: correct validation', 'update stuff']
+
+Second list contains 1 additional elements.
+First extra element 1:
+'update stuff'
+
+- ['fix: correct validation']
++ ['fix: correct validation', 'update stuff']
+?                           ++++++++++++++++
+
+
+======================================================================
+FAIL: test_pull_request_title_can_raise_the_bump (__main__.ReleaseModelTests.test_pull_request_title_can_raise_the_bump)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.github/actions/release-model/test_release_model.py", line 95, in test_pull_request_title_can_raise_the_bump
+    self.assertEqual(
+AssertionError: Lists differ: ['fix: correct validation', 'feat: add filtering'] != ['fix: correct validation', 'wip', 'feat: add filtering']
+
+First differing element 1:
+'feat: add filtering'
+'wip'
+
+Second list contains 1 additional elements.
+First extra element 2:
+'feat: add filtering'
+
+- ['fix: correct validation', 'feat: add filtering']
++ ['fix: correct validation', 'wip', 'feat: add filtering']
+?                             +++++++
+
+
+======================================================================
+FAIL: test_title_releases_when_commits_are_not_conventional (__main__.ReleaseModelTests.test_title_releases_when_commits_are_not_conventional)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/ngo-nabarun-deploy/ngo-nabarun-deploy/.github/actions/release-model/test_release_model.py", line 110, in test_title_releases_when_commits_are_not_conventional
+    self.assertEqual(["feat: add filtering"], result["commits"])
+AssertionError: Lists differ: ['feat: add filtering'] != ['wip', 'feat: add filtering']
+
+First differing element 0:
+'feat: add filtering'
+'wip'
+
+Second list contains 1 additional elements.
+First extra element 1:
+'feat: add filtering'
+
+- ['feat: add filtering']
++ ['wip', 'feat: add filtering']
+?  +++++++
+
+
+----------------------------------------------------------------------
+Ran 35 tests in 0.171s
+
+FAILED (failures=4)

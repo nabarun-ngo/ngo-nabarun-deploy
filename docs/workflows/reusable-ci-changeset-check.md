@@ -18,7 +18,7 @@ Package monorepos (`packages/**`) on `pull_request` to `main` and/or `develop`. 
 
 | Input | Default | Meaning |
 |-------|---------|---------|
-| `templates_repository` | — (**required**) | Repository holding `scripts/release_model.py`, as `owner/name`. A called workflow runs in the consumer repository, so the consumer passes this |
+| `templates_repository` | — (**required**) | Repository holding `.github/actions/release-model/`, as `owner/name`. A called workflow runs in the consumer repository, so the consumer passes this |
 | `node_version` | `22` | Node.js |
 | `working_directory` | `.` | Lockfile and `.changeset` directory |
 | `packages_filter` | `packages/**` | Path glob that requires a changeset |

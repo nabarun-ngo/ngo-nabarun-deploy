@@ -6,13 +6,13 @@
 # Required environment:
 #   TEST_TAGS / TARGET_ENV / PARALLELISM / TIMEOUT / DOPPLER_CONFIG / REPORT_TITLE
 #     Outputs of the resolve step.
-#   GH_ENV  Resolved GitHub Environment; "prod" pins parallelism to 1.
+#   GH_ENV  Resolved GitHub Environment, logged only.
 #
-# Re-emits the profile to $GITHUB_OUTPUT.
+# A prod target pins parallelism to 1. Re-emits the profile to $GITHUB_OUTPUT.
 
 set -euo pipefail
 
-if [[ "$GH_ENV" == "prod" ]]; then
+if [[ "$TARGET_ENV" == "prod" ]]; then
   PARALLELISM=1
   echo "::notice::Pinning parallelism to 1 for prod (one approval per run)"
 fi

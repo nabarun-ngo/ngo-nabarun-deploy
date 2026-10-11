@@ -124,7 +124,7 @@ on:
 
     secrets:
       PAT:
-        required: true
+        required: false
       GCP_PROJECT_ID:
         required: true
       GCP_SA_KEY:
@@ -196,7 +196,7 @@ jobs:
         with:
           repository: ${{ inputs.repository }}
           ref: ${{ inputs.ref }}
-          token: ${{ secrets.PAT }}
+          token: ${{ secrets.PAT || github.token }}
           path: app-source
 
       - name: Set artifact name

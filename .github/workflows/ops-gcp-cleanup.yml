@@ -3,7 +3,8 @@ name: Ops — GCP Scheduled Cleanup
 # Scheduled GCP resource cleanup.
 # Runs Mon/Wed/Fri at 17:00 UTC and can be triggered manually.
 # Matrix strategy: stage and prod run in parallel (fail-fast: false).
-# Binds to each matrix environment ('stage' / 'prod') to pick up GCP_SA_KEY and GCP_PROJECT_ID.
+# Each matrix entry binds to the GitHub Environment the backend manifest declares for that
+# target (environments.<target>.githubEnvironment) to pick up GCP_SA_KEY and GCP_PROJECT_ID.
 #
 # What it cleans:
 #   1. Old GAE versions      — keeps latest N (default: 2 serving versions)
@@ -63,10 +64,14 @@ jobs:
         run: |
           echo "::notice::GCP cleanup matrix event=${GITHUB_EVENT_NAME} envs=${{ github.event_name == 'workflow_dispatch' && inputs.environments || 'both' }}"
 
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Build matrix
         id: build
         env:
           EVENT: ${{ github.event_name }}
+          GCP_MANIFEST: backend
           INPUT_ENVS: ${{ github.event_name == 'workflow_dispatch' && inputs.environments || 'both' }}
           INPUT_KEEP: ${{ github.event_name == 'workflow_dispatch' && inputs.keep_versions || '2' }}
           INPUT_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.stale_days || '3' }}
@@ -76,11 +81,19 @@ jobs:
           # cannot express, because a false input collapses to the fallback.
           INPUT_DRY: ${{ github.event_name != 'workflow_dispatch' && 'true' || inputs.dry_run }}
         run: |
+          set -euo pipefail
           case "$INPUT_ENVS" in
-            stage) MATRIX='{"environment":["stage"]}' ;;
-            prod)  MATRIX='{"environment":["prod"]}' ;;
-            *)     MATRIX='{"environment":["stage","prod"]}' ;;
+            stage) TARGETS=(stage) ;;
+            prod)  TARGETS=(prod) ;;
+            *)     TARGETS=(stage prod) ;;
           esac
+
+          INCLUDE=""
+          for target in "${TARGETS[@]}"; do
+            gh_env=$(bash scripts/resolve-github-environment.sh "$GCP_MANIFEST" "$target")
+            INCLUDE+="${INCLUDE:+,}{\"environment\":\"${target}\",\"gh_env\":\"${gh_env}\"}"
+          done
+          MATRIX="{\"include\":[${INCLUDE}]}"
 
           {
             echo "matrix=$MATRIX"
@@ -106,7 +119,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
     environment:
-      name: ${{ matrix.environment }}
+      name: ${{ matrix.gh_env }}
 
     steps:
       - name: Log run context

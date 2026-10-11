@@ -46,16 +46,19 @@ Configures a post-deployment verification step to ensure the app is running corr
 enabled: true - Turns on the health check feature.
 path: "/health" - The endpoint path to ping to verify the app's health.
 timeoutSeconds: 120 - The pipeline will wait up to 2 minutes for the health check to return a successful status before failing the deployment.
+Scheduled deploys are not part of the manifest. They are declared in config/schedules/deploys.json (schema: schedules.v1.schema.json).
 environments
 Contains environment-specific overrides for different deployment stages.
 
 stage (Staging Environment)
 sourceRef: "stage" - The Git branch or tag that should be deployed to this environment.
+githubEnvironment: "be-stage" - The GitHub Environment a manual deploy binds to. It supplies the deploy secrets and the reviewer rule. Names follow <tier>-<target>[-scheduled]; see "Naming GitHub Environments" in docs/platform.md.
 gaeService: "api-staging" - The specific Google App Engine service name for staging.
 secrets.config: "stg" - Tells Doppler to fetch the staging secrets.
 healthCheckUrl: The full URL used to perform the health check after a staging deployment.
 prod (Production Environment)
 sourceRef: "main" - The Git branch or tag (usually main or master) deployed to production.
+githubEnvironment: "be-prod" - The GitHub Environment a manual production deploy binds to.
 gaeService: "api" - The main Google App Engine service name.
 secrets.config: "prd" - Tells Doppler to fetch the production secrets.
 healthCheckUrl: The full URL used to perform the health check after a production deployment.

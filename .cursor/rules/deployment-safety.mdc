@@ -8,6 +8,14 @@ alwaysApply: false
 
 - Scheduled deployment must never target `prod`; production requires a protected
   GitHub Environment and deliberate manual dispatch.
+  - Exception: the `public-site-prod-rebuild` entry in
+    `config/schedules/deploys.json` (`fe-public-site` → `prod` via
+    `fe-prod-scheduled`). The site is a static build that fetches content at
+    build time, so the rebuild refreshes content. It deploys only the latest
+    stable tag on `main`, and `fe-prod-scheduled` is restricted to `main`.
+  - No other app may get a scheduled `prod` entry without an explicit,
+    documented decision added here. Backend deploys stay manual-only because
+    they run database migrations.
 - Scheduled cleanup must default to dry-run and must not silently bypass approval.
 - Resolve cloud credentials inside the job bound to the target Environment.
   Do not pass stage/prod credentials from an unbound caller job.

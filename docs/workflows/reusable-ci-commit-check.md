@@ -35,4 +35,4 @@ jobs:
       TEMPLATES_TOKEN: ${{ secrets.TEMPLATES_TOKEN }}
 ```
 
-`templates_repository` is required. A called workflow runs in the consumer repository, so it cannot find `scripts/release_model.py` unless the consumer names the templates repository. `TEMPLATES_TOKEN` needs read access to that repository. `GITHUB_TOKEN` cannot read another repository.
+`templates_repository` is required. A called workflow runs in the consumer repository, so it cannot find `.github/actions/release-model/` unless the consumer names the templates repository. `TEMPLATES_TOKEN` needs read access to that repository. `GITHUB_TOKEN` cannot read another repository.

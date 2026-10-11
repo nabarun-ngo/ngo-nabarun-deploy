@@ -78,7 +78,7 @@ on:
 
     secrets:
       PAT:
-        required: true
+        required: false
       FB_PROJECT_ID:
         required: true
       FB_SA_KEY:
@@ -134,7 +134,7 @@ jobs:
         with:
           repository: ${{ inputs.repository }}
           ref: ${{ inputs.ref }}
-          token: ${{ secrets.PAT }}
+          token: ${{ secrets.PAT || github.token }}
           path: app-source
 
       - name: Set artifact name

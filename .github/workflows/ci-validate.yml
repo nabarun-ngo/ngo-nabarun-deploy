@@ -48,7 +48,9 @@ jobs:
       - name: Validate workflow guardrails
         run: |
           python3 scripts/test_workflow_guardrails.py
-          python3 scripts/test_release_model.py
+          python3 .github/actions/release-model/test_release_model.py
+          python3 .github/actions/release-model/test_action.py
+          python3 .github/actions/release-model/test_staging.py
           python3 scripts/validate-workflow-guardrails.py
 
       - name: Install jq and check-jsonschema

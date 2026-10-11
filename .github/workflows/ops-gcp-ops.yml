@@ -2,7 +2,8 @@ name: Ops — GCP Operations Hub
 
 # Interactive GCP operations hub — enhanced over the original GCP-Logs.yml.
 # All operations run via workflow_dispatch only.
-# Secrets are scoped to the selected environment (stage/prod).
+# Secrets come from the GitHub Environment the backend manifest declares for the
+# selected target (environments.<target>.githubEnvironment in config/manifests/backend.json).
 # Destructive operations require confirm: "yes" to prevent accidental triggers.
 #
 # Operations:
@@ -96,6 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       is_destructive: ${{ steps.check.outputs.is_destructive }}
+      gh_env: ${{ steps.gh_env.outputs.gh_env }}
 
     steps:
       - name: Log run context
@@ -127,6 +129,20 @@ jobs:
           echo "is_destructive=$IS_DESTRUCTIVE" >> "$GITHUB_OUTPUT"
           echo "::notice::Operation: $OPERATION | Destructive: $IS_DESTRUCTIVE"
 
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve GitHub Environment
+        id: gh_env
+        env:
+          GCP_MANIFEST: backend
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          GH_ENV=$(bash scripts/resolve-github-environment.sh "$GCP_MANIFEST" "$TARGET_ENV")
+          echo "gh_env=$GH_ENV" >> "$GITHUB_OUTPUT"
+          echo "::notice::GitHub Environment: $GH_ENV"
+
   # ──────────────────────────────────────────────────────────────────────────
   # Execute selected operation
   # ──────────────────────────────────────────────────────────────────────────
@@ -135,7 +151,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     environment:
-      name: ${{ inputs.environment }}
+      name: ${{ needs.validate.outputs.gh_env }}
     outputs:
       result_summary: ${{ steps.op.outputs.result_summary }}
       artifact_name: ${{ steps.op.outputs.artifact_name }}

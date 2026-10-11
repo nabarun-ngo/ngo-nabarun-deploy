@@ -92,6 +92,7 @@ class WorkflowGuardrailTests(unittest.TestCase):
         (self.root / ".github" / "actions").mkdir()
         (self.root / "scripts").mkdir()
         (self.root / "config" / "manifests").mkdir(parents=True)
+        (self.root / "config" / "schedules").mkdir()
 
         (workflows / "ci-validate.yml").write_text(
             "name: CI\npermissions:\n  contents: read\n", encoding="utf-8"
@@ -118,6 +119,17 @@ class WorkflowGuardrailTests(unittest.TestCase):
     def write_manifest(self, name: str) -> None:
         (self.root / "config" / "manifests" / f"{name}.json").write_text(
             "{}\n", encoding="utf-8"
+        )
+
+    def write_deploy_schedule(self, cron: str = "0 2 1,15 * *") -> None:
+        (self.root / "config" / "manifests" / "frontend.json").write_text(
+            '{"environments":{"prod":{}}}\n', encoding="utf-8"
+        )
+        (self.root / "config" / "schedules" / "deploys.json").write_text(
+            '{"schedules":[{"id":"frontend-prod","cron":"'
+            + cron
+            + '","deploy":{"manifest":"frontend","target":"prod"}}]}\n',
+            encoding="utf-8",
         )
 
     def test_accepts_safe_workflows(self) -> None:
@@ -203,6 +215,27 @@ class WorkflowGuardrailTests(unittest.TestCase):
                     f"scheduled manifest '{manifest}' does not exist", output
                 )
                 workflow.unlink()
+
+    def test_rejects_deploy_schedule_without_workflow_cron(self) -> None:
+        self.write_deploy_schedule()
+        result, output = self.run_guardrails()
+        self.assertEqual(1, result)
+        self.assertIn("must appear in exactly one ops-deploy-* workflow", output)
+
+    def test_accepts_deploy_schedule_with_workflow_cron(self) -> None:
+        cron = "0 2 1,15 * *"
+        self.write_deploy_schedule(cron)
+        (GUARDRAILS.WORKFLOWS / "ops-deploy-frontend.yml").write_text(
+            "name: Deploy\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "on:\n"
+            "  schedule:\n"
+            f"    - cron: '{cron}'\n",
+            encoding="utf-8",
+        )
+        result, output = self.run_guardrails()
+        self.assertEqual(0, result, output)
 
     # Expressions that keep a scheduled (non-dispatch) cleanup run in dry-run
     # mode while still letting a manual dispatch opt out.

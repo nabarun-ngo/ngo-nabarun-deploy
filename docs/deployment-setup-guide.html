@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frontend and Backend Deployment Setup Guide</title>
+  <style>
+    :root {
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --text: #1f2328;
+      --muted: #59636e;
+      --border: #d0d7de;
+      --accent: #0969da;
+      --success: #1a7f37;
+      --warning-bg: #fff8c5;
+      --warning-border: #d4a72c;
+      --danger-bg: #ffebe9;
+      --danger-border: #cf222e;
+      --code-bg: #eff1f3;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    .page {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    header,
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 18px;
+    }
+
+    header { border-top: 5px solid var(--accent); }
+
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { margin: 0 0 8px; font-size: 2rem; }
+    h2 { margin: 0 0 16px; font-size: 1.45rem; }
+    h3 { margin: 22px 0 8px; font-size: 1.08rem; }
+    p { margin: 8px 0 14px; }
+    a { color: var(--accent); }
+
+    .subtitle,
+    .muted { color: var(--muted); }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    nav a {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 11px;
+      text-decoration: none;
+      background: var(--bg);
+      font-size: 0.9rem;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .flow div {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      background: var(--bg);
+    }
+
+    .flow strong {
+      display: block;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+
+    ol.steps {
+      padding-left: 0;
+      list-style: none;
+      counter-reset: setup-step;
+    }
+
+    ol.steps > li {
+      counter-increment: setup-step;
+      position: relative;
+      padding: 0 0 22px 54px;
+      border-left: 2px solid var(--border);
+      margin-left: 18px;
+    }
+
+    ol.steps > li:last-child {
+      border-left-color: transparent;
+      padding-bottom: 0;
+    }
+
+    ol.steps > li::before {
+      content: counter(setup-step);
+      position: absolute;
+      left: -20px;
+      top: -3px;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--accent);
+      font-weight: 700;
+    }
+
+    ol.steps h3 { margin-top: 0; }
+
+    ul, ol { padding-left: 24px; }
+    li { margin: 6px 0; }
+
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 2px 5px;
+      overflow-wrap: anywhere;
+    }
+
+    pre {
+      background: #24292f;
+      color: #f6f8fa;
+      border-radius: var(--radius);
+      padding: 14px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 18px;
+      font-size: 0.94rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { background: var(--code-bg); }
+
+    .table-wrap { overflow-x: auto; }
+
+    .callout {
+      border-left: 5px solid var(--warning-border);
+      background: var(--warning-bg);
+      padding: 13px 15px;
+      margin: 14px 0;
+      border-radius: 4px;
+    }
+
+    .callout.danger {
+      border-left-color: var(--danger-border);
+      background: var(--danger-bg);
+    }
+
+    .checklist {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .checklist li::before {
+      content: "☐";
+      color: var(--success);
+      font-weight: 700;
+      margin-right: 8px;
+    }
+
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      color: #fff;
+      background: var(--success);
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+
+    footer {
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.85rem;
+      padding-top: 12px;
+    }
+
+    @media (max-width: 640px) {
+      .page { padding: 16px 10px 40px; }
+      header, section { padding: 18px; }
+      h1 { font-size: 1.6rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <span class="badge">Current pipeline</span>
+      <h1>Frontend and Backend Deployment Setup</h1>
+      <p class="subtitle">
+        Easy, one-time setup for GitHub Actions, Doppler, Google App Engine,
+        and Firebase Hosting. Verified against the repository workflows and
+        manifests on 2026-10-11.
+      </p>
+      <nav aria-label="Page sections">
+        <a href="#current-flow">Current flow</a>
+        <a href="#accounts">Accounts</a>
+        <a href="#cloud">Google Cloud</a>
+        <a href="#doppler">Doppler</a>
+        <a href="#github">GitHub</a>
+        <a href="#first-deploy">First deploy</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+      </nav>
+    </header>
+
+    <section id="current-flow">
+      <h2>1. Understand the current deployment flow</h2>
+      <div class="flow">
+        <div><strong>Application release</strong>Merging to <code>develop</code> or <code>main</code> creates a version tag and GitHub Release in the application repository.</div>
+        <div><strong>Operator starts deploy</strong>Deployments are started from the deploy repository. Application releases do not automatically deploy.</div>
+        <div><strong>GitHub approval</strong>Manual stage and production runs wait for a reviewer through GitHub Environments.</div>
+        <div><strong>Build and secrets</strong>GitHub builds the selected tag. Doppler supplies build-time or runtime configuration.</div>
+        <div><strong>Cloud deploy</strong>The backend goes to App Engine. Both frontends go to separate Firebase Hosting sites.</div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Application</th><th>Source and tag stream</th><th>Destination</th><th>Doppler project</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Backend API</td><td><code>ngo-nabarun-be</code><br />stage: <code>develop</code> prerelease<br />prod: <code>main</code> stable</td><td>App Engine<br /><code>api-staging</code> / <code>api</code></td><td><code>backend-api</code></td></tr>
+            <tr><td>Internal portal</td><td><code>ngo-nabarun-fe</code><br />stage: <code>develop</code> prerelease<br />prod: <code>main</code> stable</td><td>Firebase Hosting<br /><code>ngonabarun-portal-stage</code> / <code>ngonabarun-portal</code></td><td><code>frontend</code></td></tr>
+            <tr><td>Public site</td><td><code>ngo-nabarun-fe</code><br />stage: <code>develop</code> prerelease<br />prod: <code>main</code> stable</td><td>Firebase Hosting<br /><code>ngonabarun-stage</code> / <code>nabarunngo</code></td><td><code>frontend</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>Automatic run:</strong> the public site is rebuilt in
+        production on the 1st and 15th of every month at 02:00 UTC, using the
+        newest stable tag on <code>main</code>. It fetches content at build
+        time, so the rebuild refreshes content even without a new release.
+        Nothing deploys to stage on a schedule, and every other deployment is
+        manual.
+      </p>
+    </section>
+
+    <section id="accounts">
+      <h2>2. Collect access before changing settings</h2>
+      <ul class="checklist">
+        <li>Admin access to the deploy GitHub repository.</li>
+        <li>Read access to both application repositories.</li>
+        <li>Permission to manage the stage and production Google Cloud projects.</li>
+        <li>Permission to create service accounts and JSON keys.</li>
+        <li>Permission to manage the <code>backend-api</code> and <code>frontend</code> Doppler projects and their <code>stg</code>/<code>prd</code> configs.</li>
+        <li>Names of the people or teams who will approve stage and production deployments.</li>
+      </ul>
+    </section>
+
+    <section id="cloud">
+      <h2>3. Prepare Google Cloud and Firebase</h2>
+      <ol class="steps">
+        <li>
+          <h3>Choose the stage and production project IDs</h3>
+          <p>
+            Record the Google Cloud project ID used by each environment. The
+            current workflows call this value <code>GCP_PROJECT_ID</code> for
+            the backend and <code>FB_PROJECT_ID</code> for the frontends.
+            They may be the same project ID, but they are separate GitHub
+            secret names.
+          </p>
+        </li>
+        <li>
+          <h3>Enable the required services</h3>
+          <p>In each applicable Google Cloud project, enable:</p>
+          <ul>
+            <li>App Engine, Cloud Build, and Cloud Storage for the backend.</li>
+            <li>Firebase and Firebase Hosting for the frontends.</li>
+          </ul>
+          <p>Create the App Engine application once in each backend project. Create or connect the Firebase project once in each frontend project.</p>
+        </li>
+        <li>
+          <h3>Create the Firebase Hosting sites</h3>
+          <p>Make sure these site IDs already exist before the first deployment:</p>
+          <ul>
+            <li>Stage: <code>ngonabarun-portal-stage</code> and <code>ngonabarun-stage</code></li>
+            <li>Production: <code>ngonabarun-portal</code> and <code>nabarunngo</code></li>
+          </ul>
+        </li>
+        <li>
+          <h3>Create a backend deployment service account</h3>
+          <p>
+            Create one service account per environment where possible. It must
+            be allowed to deploy App Engine versions, inspect versions, move
+            service traffic, start Cloud Build, upload the App Engine staging
+            bundle, and act as the App Engine runtime service account.
+          </p>
+          <p>
+            A practical starting permission set is App Engine Admin, Cloud
+            Build Editor, Storage Admin, and Service Account User. Your cloud
+            administrator can reduce these permissions after a successful
+            deployment by checking the audit logs.
+          </p>
+          <p>Create a JSON key and save the complete JSON temporarily. This becomes <code>GCP_SA_KEY</code>.</p>
+        </li>
+        <li>
+          <h3>Create a frontend deployment service account</h3>
+          <p>
+            Create one service account per environment. Grant it permission to
+            deploy Firebase Hosting releases for both Hosting sites in that
+            environment. Create a JSON key and save the complete JSON
+            temporarily. This becomes <code>FB_SA_KEY</code>.
+          </p>
+        </li>
+      </ol>
+      <div class="callout danger">
+        <strong>Protect JSON keys.</strong> Never commit a service-account JSON
+        file. After adding its full contents to GitHub, securely delete local
+        copies. Rotate the key immediately if it is pasted into a ticket, chat,
+        log, or source file.
+      </div>
+    </section>
+
+    <section id="doppler">
+      <h2>4. Prepare Doppler projects, configs, and tokens</h2>
+      <ol class="steps">
+        <li>
+          <h3>Confirm the projects and configs</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Doppler project</th><th>Stage config</th><th>Production config</th><th>Used by</th></tr></thead>
+              <tbody>
+                <tr><td><code>backend-api</code></td><td><code>stg</code></td><td><code>prd</code></td><td>Backend migration and App Engine runtime</td></tr>
+                <tr><td><code>frontend</code></td><td><code>stg</code></td><td><code>prd</code></td><td>Internal portal and public site builds</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </li>
+        <li>
+          <h3>Add application configuration</h3>
+          <p>
+            Copy the required names from each application's
+            <code>.env.example</code> into the matching Doppler config. Use real
+            stage values in <code>stg</code> and real production values in
+            <code>prd</code>.
+          </p>
+          <ul>
+            <li>Backend project: database, Redis, application URLs, CORS, Auth0/JWT, Google, Firebase storage, email, OneSignal, and alerting configuration.</li>
+            <li>Frontend project, internal portal: every required <code>NG_APP_*</code> value. Never enable auth bypass or mock data in stage or production.</li>
+            <li>Frontend project, public site: required <code>NEXT_PUBLIC_*</code> values plus server-only values such as <code>API_KEY</code>. Put these in the same <code>frontend</code> config as the portal values.</li>
+          </ul>
+          <div class="callout">
+            Frontend values prefixed with <code>NG_APP_</code> or
+            <code>NEXT_PUBLIC_</code> are compiled into browser files. They
+            must not contain private keys, client secrets, or passwords.
+          </div>
+        </li>
+        <li>
+          <h3>Create one read-only service token per project and config</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Doppler token for</th><th>Stored as <code>DOPPLER_TOKEN</code> in</th></tr></thead>
+              <tbody>
+                <tr><td><code>frontend</code> / <code>stg</code></td><td><code>fe-stage</code></td></tr>
+                <tr><td><code>frontend</code> / <code>prd</code></td><td><code>fe-prod</code> and <code>fe-prod-scheduled</code></td></tr>
+                <tr><td><code>backend-api</code> / <code>stg</code></td><td><code>be-stage</code></td></tr>
+                <tr><td><code>backend-api</code> / <code>prd</code></td><td><code>be-prod</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            One frontend token covers both the internal portal and the public
+            site because they share the <code>frontend</code> project. Do not
+            reuse a stage token in production. The test pipeline needs its own
+            tokens for its Doppler project in <code>tests-stage</code>,
+            <code>tests-prod</code>, and <code>tests-scheduled</code>.
+          </p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="github">
+      <h2>5. Configure GitHub</h2>
+      <ol class="steps">
+        <li>
+          <h3>Enable Actions permissions in the application repositories</h3>
+          <p>
+            In both the backend and frontend repositories, open
+            <strong>Settings → Actions → General → Workflow permissions</strong>.
+            The release workflow creates tags and GitHub Releases, so allow the
+            workflow the write permissions declared in its YAML.
+          </p>
+          <p>
+            A push to <code>develop</code> creates a prerelease tag. A push to
+            <code>main</code> creates a stable tag. Confirm at least one suitable
+            tag exists before using <code>latest</code> in a deploy.
+          </p>
+        </li>
+        <li>
+          <h3>Create GitHub Environments in the deploy repository</h3>
+          <p>
+            Open <strong>Settings → Environments</strong> and create these
+            exact names. Frontend and backend have separate environments, so
+            every workflow reads the same secret names and a frontend job never
+            sees backend credentials.
+          </p>
+          <p>
+            Names follow <code>&lt;tier&gt;-&lt;target&gt;</code>: the tier is
+            <code>fe</code>, <code>be</code>, or <code>tests</code>, and the
+            target is <code>stage</code> or <code>prod</code>. An auto-approved
+            copy for scheduled runs adds <code>-scheduled</code>, for example
+            <code>fe-prod-scheduled</code>. Use lowercase letters, digits, and
+            hyphens only. Each application declares its names in its manifest;
+            test runs declare theirs in <code>config/schedules/tests.json</code>.
+            The full convention is in <code>docs/platform.md</code> under
+            "Naming GitHub Environments".
+          </p>
+          <div class="callout danger">
+            Create each environment here <strong>before</strong> any manifest or
+            schedule refers to it, and copy the name exactly. If a name is
+            misspelled, GitHub quietly creates a new environment with no
+            reviewers and no secrets, and the deploy runs without approval.
+            No automated check catches this, so compare names carefully.
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Environment</th><th>Protection</th><th>Purpose</th></tr></thead>
+              <tbody>
+                <tr><td><code>fe-stage</code></td><td>At least one required reviewer.</td><td>Manual frontend stage deployments</td></tr>
+                <tr><td><code>fe-prod</code></td><td>Release-manager reviewers; deployment branches limited to <code>main</code>.</td><td>Manual frontend production deployments</td></tr>
+                <tr><td><code>fe-prod-scheduled</code></td><td>No reviewer; deployment branches limited to <code>main</code>.</td><td>Automatic public-site production rebuild</td></tr>
+                <tr><td><code>be-stage</code></td><td>At least one required reviewer.</td><td>Manual backend stage deployments, GCP operations and cleanup</td></tr>
+                <tr><td><code>be-prod</code></td><td>Release-manager reviewers; deployment branches limited to <code>main</code>.</td><td>Manual backend production deployments, GCP operations and cleanup</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="muted">
+            The test pipeline uses <code>tests-stage</code>,
+            <code>tests-prod</code>, and <code>tests-scheduled</code>; they are
+            not needed for frontend or backend deployment.
+          </p>
+          <div class="callout">
+            Only the public site can use <code>fe-prod-scheduled</code>: it is
+            the only application listed in
+            <code>config/schedules/deploys.json</code>, the file that declares
+            scheduled deploys. The pipeline rejects a scheduled deploy for any
+            application not listed there, so
+            the internal portal and backend always need a reviewer for
+            production.
+          </div>
+        </li>
+        <li>
+          <h3>Add Environment secrets</h3>
+          <p>Inside each Environment, open <strong>Environment secrets</strong> and add:</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Secret</th><th><code>fe-stage</code></th><th><code>fe-prod</code> and <code>fe-prod-scheduled</code></th><th><code>be-stage</code></th><th><code>be-prod</code></th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>FB_PROJECT_ID</code></td><td>Stage Firebase project ID</td><td>Production Firebase project ID</td><td>Not used</td><td>Not used</td></tr>
+                <tr><td><code>FB_SA_KEY</code></td><td>Stage frontend service-account JSON</td><td>Production frontend service-account JSON</td><td>Not used</td><td>Not used</td></tr>
+                <tr><td><code>GCP_PROJECT_ID</code></td><td>Not used</td><td>Not used</td><td>Stage App Engine project ID</td><td>Production App Engine project ID</td></tr>
+                <tr><td><code>GCP_SA_KEY</code></td><td>Not used</td><td>Not used</td><td>Stage backend service-account JSON</td><td>Production backend service-account JSON</td></tr>
+                <tr><td><code>DOPPLER_TOKEN</code></td><td><code>frontend</code> / <code>stg</code></td><td><code>frontend</code> / <code>prd</code></td><td><code>backend-api</code> / <code>stg</code></td><td><code>backend-api</code> / <code>prd</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            GitHub secrets are case-sensitive. Keep the exact uppercase names.
+            <code>fe-prod-scheduled</code> must hold copies of the
+            <code>fe-prod</code> secrets because GitHub Environments do not
+            share secrets. When you rotate a production frontend credential,
+            update both environments.
+          </p>
+        </li>
+        <li>
+          <h3>Decide whether a GitHub PAT is needed</h3>
+          <p>
+            Do not manually create a secret named <code>GITHUB_TOKEN</code>.
+            GitHub automatically creates that token for each workflow run.
+          </p>
+          <p>
+            The deploy workflows use the automatic token to read public
+            application repositories. If either application repository is
+            private, create a fine-grained personal access token with read-only
+            access to repository contents and metadata for those repositories.
+            Add it to the deploy repository as a repository secret named
+            <code>PAT</code>.
+          </p>
+          <div class="callout">
+            Use <code>PAT</code> only for cross-repository read access. It is
+            optional for the current public application repositories and is not
+            the same as <code>DOPPLER_TOKEN</code>.
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="first-deploy">
+      <h2>6. Run the first deployments safely</h2>
+      <ol class="steps">
+        <li>
+          <h3>Confirm a releasable tag exists</h3>
+          <p>
+            For stage, confirm a semver prerelease tag such as
+            <code>1.2.0-beta.1</code> is reachable from <code>develop</code>.
+            For production, confirm a stable tag such as <code>1.2.0</code> is
+            reachable from <code>main</code>.
+          </p>
+        </li>
+        <li>
+          <h3>Deploy the backend to stage</h3>
+          <p>In the deploy repository, open <strong>Actions → Ops — Deploy Backend (GAE) → Run workflow</strong>.</p>
+          <pre><code>manifest_name: backend
+target_environment: stage
+tag_name: latest</code></pre>
+          <p>
+            Approve the <code>be-stage</code> Environment. The workflow builds the
+            selected tag, runs the database migration and seed through Doppler,
+            deploys a zero-traffic App Engine version, checks
+            <code>/health</code>, and only then moves traffic.
+          </p>
+        </li>
+        <li>
+          <h3>Deploy both frontends to stage</h3>
+          <p>Open <strong>Actions → Ops — Deploy Frontend (Firebase) → Run workflow</strong> and run it twice:</p>
+          <pre><code>manifest_name: fe-internal-app
+target_environment: stage
+tag_name: latest
+
+manifest_name: fe-public-site
+target_environment: stage
+tag_name: latest</code></pre>
+          <p>Approve each <code>fe-stage</code> run. Doppler injects environment values while each frontend is built, then the output is deployed to its Firebase site.</p>
+        </li>
+        <li>
+          <h3>Verify stage before production</h3>
+          <ul class="checklist">
+            <li>Backend health endpoint returns HTTP 200.</li>
+            <li>Database migrations completed and expected seed data is present.</li>
+            <li>Internal portal login, API URL, and service worker are correct.</li>
+            <li>Public-site canonical URL, API calls, forms, and no-index setting are correct.</li>
+            <li>No secret value appears in GitHub logs or frontend browser files.</li>
+          </ul>
+        </li>
+        <li>
+          <h3>Deploy production</h3>
+          <p>
+            Repeat the same workflows with
+            <code>target_environment: prod</code>. Use <code>latest</code> to
+            select the newest stable tag reachable from <code>main</code>, or
+            enter an explicit stable tag. A reviewer must approve
+            <code>be-prod</code> or <code>fe-prod</code>.
+          </p>
+          <p>
+            After the first production public-site deploy, the scheduled
+            rebuild runs on the next 1st or 15th through
+            <code>fe-prod-scheduled</code> without approval. Check that run in
+            the Actions tab; if it fails, compare its secrets with
+            <code>fe-prod</code>.
+          </p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="troubleshooting">
+      <h2>7. Fast troubleshooting</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Failure</th><th>Most likely check</th></tr></thead>
+          <tbody>
+            <tr><td>Cannot list tags or checkout application source</td><td>Repository visibility and the optional <code>PAT</code>; also confirm the tag is on the expected branch.</td></tr>
+            <tr><td>No tag found for <code>latest</code></td><td>Stage needs a reachable prerelease tag on <code>develop</code>; production needs a reachable stable tag on <code>main</code>.</td></tr>
+            <tr><td>Doppler access denied or config not found</td><td><code>DOPPLER_TOKEN</code> in a <code>fe-*</code> environment must read project <code>frontend</code>; in a <code>be-*</code> environment it must read <code>backend-api</code>. The config must be <code>stg</code> for stage and <code>prd</code> for production.</td></tr>
+            <tr><td>Frontend compilation reports a missing variable</td><td>Required <code>NG_APP_*</code> or <code>NEXT_PUBLIC_*</code> value in the shared <code>frontend</code> config.</td></tr>
+            <tr><td>Backend migration fails</td><td><code>DATABASE_URL</code>, database network access, bundled Doppler CLI, and migration permissions.</td></tr>
+            <tr><td>App Engine authentication or permission error</td><td>Full JSON in <code>GCP_SA_KEY</code>, matching <code>GCP_PROJECT_ID</code>, enabled APIs, and service-account roles.</td></tr>
+            <tr><td>Backend deploy succeeds but health check fails</td><td>Runtime Doppler values, application logs, <code>/health</code>, and database/Redis reachability. The new version remains at 0% traffic.</td></tr>
+            <tr><td>Firebase site or project not found</td><td><code>FB_PROJECT_ID</code>, Hosting site IDs in the manifest, and <code>FB_SA_KEY</code> permissions.</td></tr>
+            <tr><td>Scheduled public-site deploy fails but manual production works</td><td>Missing or stale copies of <code>FB_PROJECT_ID</code>, <code>FB_SA_KEY</code>, or <code>DOPPLER_TOKEN</code> in <code>fe-prod-scheduled</code>, or its branch rule does not allow <code>main</code>.</td></tr>
+            <tr><td>"Scheduled deploys are only allowed for fe-public-site to prod"</td><td>The schedule was changed to another application or to stage. Only the public-site production rebuild may run on a schedule.</td></tr>
+            <tr><td>Deploy runs without asking for approval and then fails on an empty secret</td><td>The environment was never created in GitHub. GitHub creates a referenced environment that does not exist, with no reviewers and no secrets. Delete that auto-created environment, then create it properly with the exact name, reviewers and secrets.</td></tr>          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>8. Final setup checklist</h2>
+      <ul class="checklist">
+        <li>App Engine and Firebase Hosting resources exist.</li>
+        <li>All four Firebase Hosting site IDs exist.</li>
+        <li>Backend and frontend service-account JSON keys are stored only in GitHub Environment secrets.</li>
+        <li>Doppler has <code>backend-api</code> and one shared <code>frontend</code> project, each with <code>stg</code> and <code>prd</code>.</li>
+        <li>The internal portal and public site values are both stored in <code>frontend</code>.</li>
+        <li>Each <code>DOPPLER_TOKEN</code> is a read-only service token for the right project and config.</li>
+        <li>GitHub Environments <code>fe-stage</code>, <code>fe-prod</code>, <code>fe-prod-scheduled</code>, <code>be-stage</code>, and <code>be-prod</code> exist with exact names.</li>
+        <li>All four manual environments have required reviewers; both production environments and <code>fe-prod-scheduled</code> allow only <code>main</code>.</li>
+        <li><code>fe-prod-scheduled</code> secrets match <code>fe-prod</code>.</li>
+        <li>The old <code>stage</code>, <code>prod</code>, and <code>stage-scheduled</code> environments are deleted after the new ones work.</li>
+        <li>All required Environment secrets are present and correctly cased.</li>
+        <li>A suitable application release tag exists.</li>
+        <li>Backend, internal portal, and public site have each passed a stage deployment.</li>
+      </ul>
+    </section>
+
+    <footer>
+      Source of truth: deploy workflows and manifests in this repository. Update
+      this page when secret names, environment routing, manifests, or deployment
+      destinations change.
+    </footer>
+  </main>
+</body>
+</html>

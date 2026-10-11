@@ -92,6 +92,9 @@ outputs:
   doppler_config:
     description: environments[target].secrets.config (Doppler config name for this env)
     value: ${{ steps.parse.outputs.doppler_config }}
+  github_environment:
+    description: environments[target].githubEnvironment (GitHub Environment for a manual deploy)
+    value: ${{ steps.parse.outputs.github_environment }}
   manifest_json:
     description: Full manifest JSON (for debug/audit)
     value: ${{ steps.parse.outputs.manifest_json }}
@@ -126,5 +129,5 @@ runs:
           echo "| Secrets provider | \`${{ steps.parse.outputs.secrets_provider }}\` |"
           echo "| Doppler project | \`${{ steps.parse.outputs.doppler_project }}\` |"
           echo "| Doppler config | \`${{ steps.parse.outputs.doppler_config }}\` |"
-          
+          echo "| GitHub Environment | \`${{ steps.parse.outputs.github_environment }}\` |"
         } >> "$GITHUB_STEP_SUMMARY"

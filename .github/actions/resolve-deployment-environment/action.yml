@@ -1,14 +1,14 @@
 name: Resolve Deployment Environment
 description: >
-  Map (triggerType, targetEnvironment) to a GitHub Environment name.
-  Scheduled runs are routed to auto-approved *-scheduled environments.
-  Manual / dispatch runs are routed to protected environments.
+  Map a run to the GitHub Environment its jobs bind to. Holds no environment
+  names: callers pass names read from the manifests and config/schedules/.
+  Every reusable workflow can then read the same secret names (e.g. DOPPLER_TOKEN).
 
   Routing table:
-    schedule  + deploy  + stage → stage-scheduled
-    schedule  + tests           → tests-scheduled
-    manual/dispatch + stage     → stage
-    manual/dispatch + prod      → prod
+    deploy + manual/dispatch → github_environment (manifest environments[target].githubEnvironment)
+    deploy + schedule        → schedule_github_environment (matching config/schedules/deploys.json entry)
+    deploy + schedule, no matching entry → error
+    tests  + any trigger     → github_environment (tests.json manualGithubEnvironments or profile githubEnvironment)
 
 inputs:
   trigger_type:
@@ -18,18 +18,32 @@ inputs:
     description: Logical environment from the manifest (stage | prod).
     required: true
   workflow_type:
-    description: >
-      'deploy' or 'tests'. Distinguishes scheduled deploy from scheduled test runs
-      so they can map to different GitHub Environments (stage-scheduled vs tests-scheduled).
+    description: "'deploy' or 'tests'."
     required: false
     default: deploy
+  manifest_name:
+    description: Manifest being deployed, used in error messages.
+    required: false
+    default: ''
+  github_environment:
+    description: >
+      Deploy: resolve-manifest output github_environment (required for manual deploys).
+      Tests: resolve-test-profile output github_environment (required).
+    required: false
+    default: ''
+  schedule_github_environment:
+    description: >
+      githubEnvironment of the config/schedules/deploys.json entry matching the
+      cron (scripts/resolve-deploy-schedule.sh). Required for scheduled deploys.
+    required: false
+    default: ''
 
 outputs:
   gh_env:
     description: GitHub Environment name to bind the calling job to.
     value: ${{ steps.route.outputs.gh_env }}
   requires_approval:
-    description: '"true" if the resolved environment has required reviewers.'
+    description: '"true" for manual runs, whose environments have required reviewers.'
     value: ${{ steps.route.outputs.requires_approval }}
   approval_mode:
     description: '"auto" for scheduled runs, "manual" for dispatch/manual runs.'
@@ -45,6 +59,9 @@ runs:
         TRIGGER_TYPE: ${{ inputs.trigger_type }}
         TARGET_ENV: ${{ inputs.target_environment }}
         WORKFLOW_TYPE: ${{ inputs.workflow_type }}
+        MANIFEST_NAME: ${{ inputs.manifest_name }}
+        INPUT_GH_ENV: ${{ inputs.github_environment }}
+        SCHEDULE_GH_ENV: ${{ inputs.schedule_github_environment }}
       run: bash "$GITHUB_ACTION_PATH/route-environment.sh"
 
     - name: Write step summary
@@ -58,6 +75,7 @@ runs:
           echo "| Trigger type | \`${{ inputs.trigger_type }}\` |"
           echo "| Target environment | \`${{ inputs.target_environment }}\` |"
           echo "| Workflow type | \`${{ inputs.workflow_type }}\` |"
+          echo "| Manifest | \`${{ inputs.manifest_name }}\` |"
           echo "| **GitHub Environment** | **\`${{ steps.route.outputs.gh_env }}\`** |"
           echo "| Requires approval | ${{ steps.route.outputs.requires_approval }} |"
           echo "| Approval mode | \`${{ steps.route.outputs.approval_mode }}\` |"

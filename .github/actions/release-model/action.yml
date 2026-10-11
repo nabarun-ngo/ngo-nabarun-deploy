@@ -1,0 +1,190 @@
+name: Release Model
+description: >
+  Check out the templates repository at an immutable commit and execute one
+  release-model operation against the caller workspace.
+
+inputs:
+  templates_repository:
+    description: Repository containing the release-model implementation, as owner/name.
+    required: true
+  templates_ref:
+    description: Full 40-character commit SHA of the templates repository.
+    required: true
+  templates_token:
+    description: Token with read access to the templates repository.
+    required: true
+  operation:
+    description: Release-model operation to execute.
+    required: true
+  working_directory:
+    description: Consumer directory the operation runs against.
+    required: false
+    default: '.'
+  payload:
+    description: JSON payload file for plan, baseline, or validate-pr.
+    required: false
+    default: ''
+  version:
+    description: Explicit release version.
+    required: false
+    default: ''
+  version_file:
+    description: Package version file.
+    required: false
+    default: 'package.json'
+  changelog:
+    description: Changelog file used by apply.
+    required: false
+    default: 'CHANGELOG.md'
+  subjects_file:
+    description: Commit-subject file used by apply.
+    required: false
+    default: ''
+  tag:
+    description: Prerelease or npm distribution tag.
+    required: false
+    default: ''
+  prerelease:
+    description: Whether assert-versions expects prerelease versions.
+    required: false
+    default: 'false'
+  stable_branch:
+    description: Stable release branch.
+    required: false
+    default: 'main'
+  prerelease_branch:
+    description: Prerelease branch.
+    required: false
+    default: 'develop'
+  prerelease_tag:
+    description: Prerelease identifier.
+    required: false
+    default: 'beta'
+  stable_command:
+    description: Stable npm publish command.
+    required: false
+    default: ''
+  prerelease_command:
+    description: Prerelease npm publish command.
+    required: false
+    default: ''
+  version_command:
+    description: Changesets version command used by open-version-pr.
+    required: false
+    default: ''
+  pr_title:
+    description: Pull request title for validation or version-PR creation.
+    required: false
+    default: ''
+  pr_commit:
+    description: Version pull request commit message.
+    required: false
+    default: ''
+  base_ref:
+    description: Pull request base ref used by check-pr.
+    required: false
+    default: ''
+  skip_changeset:
+    description: Whether check-pr may skip the changeset requirement.
+    required: false
+    default: 'false'
+  packages_changed:
+    description: Whether package paths changed for check-pr.
+    required: false
+    default: 'false'
+
+outputs:
+  result_json:
+    description: JSON result emitted by plan.
+    value: ${{ steps.run.outputs.result_json }}
+  version:
+    description: Version selected by plan.
+    value: ${{ steps.run.outputs.version }}
+  baseline:
+    description: Baseline selected by baseline.
+    value: ${{ steps.run.outputs.baseline }}
+  valid:
+    description: Whether validate-pr or check-pr passed.
+    value: ${{ steps.run.outputs.valid }}
+  changed_json:
+    description: JSON array of files changed by shift-prerelease.
+    value: ${{ steps.run.outputs.changed_json }}
+  already_published:
+    description: Whether skip-if-published found every package version on npm.
+    value: ${{ steps.run.outputs.already_published }}
+  tag:
+    description: Tag created or reused by create-tag-release.
+    value: ${{ steps.run.outputs.tag }}
+  created:
+    description: Whether create-tag-release created a tag.
+    value: ${{ steps.run.outputs.created }}
+  prerelease:
+    description: Whether the resulting tag is a prerelease.
+    value: ${{ steps.run.outputs.prerelease }}
+  skipped:
+    description: Whether create-tag-release skipped release creation.
+    value: ${{ steps.run.outputs.skipped }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate immutable templates ref
+      shell: bash
+      env:
+        TEMPLATES_REF: ${{ inputs.templates_ref }}
+      run: |
+        set -euo pipefail
+        if [[ ! "$TEMPLATES_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+          echo "::error::templates_ref must be a full 40-character commit SHA."
+          exit 1
+        fi
+
+    - name: Checkout templates repository
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.templates_repository }}
+        ref: ${{ inputs.templates_ref }}
+        token: ${{ inputs.templates_token }}
+        path: platform
+        persist-credentials: false
+
+    - name: Keep platform checkout out of consumer changes
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -d .git ]]; then
+          grep -qxF 'platform/' .git/info/exclude || echo 'platform/' >> .git/info/exclude
+        fi
+
+    - name: Execute release-model operation
+      id: run
+      shell: bash
+      env:
+        OPERATION: ${{ inputs.operation }}
+        WORK_DIR: ${{ inputs.working_directory }}
+        PAYLOAD: ${{ inputs.payload }}
+        INPUT_VERSION: ${{ inputs.version }}
+        VERSION_FILE: ${{ inputs.version_file }}
+        CHANGELOG_FILE: ${{ inputs.changelog }}
+        SUBJECTS_FILE: ${{ inputs.subjects_file }}
+        RELEASE_TAG: ${{ inputs.tag }}
+        EXPECT_PRERELEASE: ${{ inputs.prerelease }}
+        CURRENT_BRANCH: ${{ github.ref_name }}
+        STABLE_BRANCH: ${{ inputs.stable_branch }}
+        PRERELEASE_BRANCH: ${{ inputs.prerelease_branch }}
+        PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
+        STABLE_COMMAND: ${{ inputs.stable_command }}
+        PRERELEASE_COMMAND: ${{ inputs.prerelease_command }}
+        VERSION_COMMAND: ${{ inputs.version_command }}
+        PR_TITLE: ${{ inputs.pr_title }}
+        PR_COMMIT: ${{ inputs.pr_commit }}
+        BASE_REF: ${{ inputs.base_ref }}
+        SKIP_CHANGESET: ${{ inputs.skip_changeset }}
+        PACKAGES_CHANGED: ${{ inputs.packages_changed }}
+        WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        GH_REPO: ${{ github.repository }}
+        GIT_AUTHOR_NAME: github-actions[bot]
+        GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        GIT_COMMITTER_NAME: github-actions[bot]
+        GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      run: bash "$GITHUB_ACTION_PATH/run-release-model.sh"

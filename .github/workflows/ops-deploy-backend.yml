@@ -1,9 +1,10 @@
 name: Ops — Deploy Backend (GAE)
 
 # Deploy the backend manifest to App Engine.
-# Triggered manually, or by repository_dispatch type Trigger-Deploy-Backend.
+# Manual deploy only (workflow_dispatch). There is no schedule or dispatch trigger.
 # An application release does not start this workflow.
-# Stage and prod both bind to GitHub Environments that require reviewers.
+# Stage and prod bind to the GitHub Environment named in the manifest
+# (environments.<target>.githubEnvironment); both require reviewers.
 
 on:
   workflow_dispatch:
@@ -26,9 +27,6 @@ on:
         required: false
         default: 'latest'
 
-  repository_dispatch:
-    types: [Trigger-Deploy-Backend]
-
 permissions:
   contents: read
   id-token: write
@@ -38,9 +36,9 @@ jobs:
     name: Setup context
     uses: ./.github/workflows/reusable-setup-context.yml
     with:
-      manifest_name: ${{ github.event_name == 'workflow_dispatch' && inputs.manifest_name || github.event.client_payload.manifest_name }}
-      target_environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || github.event.client_payload.target_environment || 'stage' }}
-      tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.event.client_payload.tag_name || 'latest' }}
+      manifest_name: ${{ inputs.manifest_name }}
+      target_environment: ${{ inputs.target_environment }}
+      tag_name: ${{ inputs.tag_name || 'latest' }}
       workflow_type: deploy
 
   manifest:
@@ -69,6 +67,7 @@ jobs:
       doppler_project: ${{ steps.resolve.outputs.doppler_project }}
       doppler_config: ${{ steps.resolve.outputs.doppler_config }}
       source_ref: ${{ steps.resolve.outputs.source_ref }}
+      github_environment: ${{ steps.resolve.outputs.github_environment }}
 
     steps:
       - name: Log run context
@@ -116,11 +115,11 @@ jobs:
           tag_name: ${{ needs.context.outputs.tag_name }}
           target_branch: ${{ needs.manifest.outputs.source_ref }}
           repository: ${{ needs.manifest.outputs.repository }}
-          github_token: ${{ secrets.PAT }}
+          github_token: ${{ secrets.PAT || github.token }}
 
   resolve_env:
     name: Resolve GitHub Environment
-    needs: context
+    needs: [context, manifest]
     runs-on: ubuntu-latest
     outputs:
       gh_env: ${{ steps.resolve.outputs.gh_env }}
@@ -140,6 +139,8 @@ jobs:
           trigger_type: ${{ needs.context.outputs.trigger_type }}
           target_environment: ${{ needs.context.outputs.target_environment }}
           workflow_type: deploy
+          manifest_name: ${{ needs.context.outputs.manifest_name }}
+          github_environment: ${{ needs.manifest.outputs.github_environment }}
 
   deploy:
     name: Deploy App Engine
@@ -169,8 +170,4 @@ jobs:
       use_gh_env: true
       gh_env: ${{ needs.resolve_env.outputs.gh_env }}
       target_environment: ${{ needs.context.outputs.target_environment }}
-    secrets: 
-      PAT: ${{ secrets.GITHUB_TOKEN }}
-      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+    secrets: inherit

@@ -28,8 +28,8 @@ Replace `YOUR_ORG/deploy-platform` in examples with this repository’s `owner/n
 | Workflow | Role | Doc |
 |----------|------|-----|
 | [`ci-validate.yml`](.github/workflows/ci-validate.yml) | Manifest, workflow, and shell lint on this repo | [docs/workflows/ci-validate.md](docs/workflows/ci-validate.md) |
-| [`ops-deploy-backend.yml`](.github/workflows/ops-deploy-backend.yml) | App Engine deploy (`workflow_dispatch` or `Trigger-Deploy-Backend`) | [docs/workflows/ops-deploy-backend.md](docs/workflows/ops-deploy-backend.md) |
-| [`ops-deploy-frontend.yml`](.github/workflows/ops-deploy-frontend.yml) | Manual Firebase deploy; scheduled public-site stage deploy | [docs/workflows/ops-deploy-frontend.md](docs/workflows/ops-deploy-frontend.md) |
+| [`ops-deploy-backend.yml`](.github/workflows/ops-deploy-backend.yml) | App Engine deploy (manual `workflow_dispatch` only) | [docs/workflows/ops-deploy-backend.md](docs/workflows/ops-deploy-backend.md) |
+| [`ops-deploy-frontend.yml`](.github/workflows/ops-deploy-frontend.yml) | Manual Firebase deploy; scheduled deploys from `config/schedules/deploys.json` (public-site prod rebuild) | [docs/workflows/ops-deploy-frontend.md](docs/workflows/ops-deploy-frontend.md) |
 | [`ops-run-tests.yml`](.github/workflows/ops-run-tests.yml) | Manual/schedule tests | [docs/workflows/ops-run-tests.md](docs/workflows/ops-run-tests.md) |
 | [`ops-publish-site.yml`](.github/workflows/ops-publish-site.yml) | Publish the docs portal to `gh-pages` | [docs/workflows/ops-publish-site.md](docs/workflows/ops-publish-site.md) |
 | [`ops-gcp-ops.yml`](.github/workflows/ops-gcp-ops.yml) | Interactive GCP operations hub | [docs/workflows/ops-gcp-ops.md](docs/workflows/ops-gcp-ops.md) |
@@ -37,11 +37,50 @@ Replace `YOUR_ORG/deploy-platform` in examples with this repository’s `owner/n
 
 Client consumption examples live **in each workflow doc**, not in a separate `examples/` folder.
 
-## Platform setup
+## Guides
 
-Environments, secrets, manifests, Doppler, and schedules: [docs/platform.md](docs/platform.md).
+| Guide | Read it when |
+|-------|--------------|
+| [Deployment setup guide](docs/deployment-setup-guide.html) | Setting up GitHub Environments, secrets, Doppler, App Engine and Firebase for the first time (step by step, opens in a browser) |
+| [Platform setup](docs/platform.md) | You need the reference: environment names and naming convention, secrets, manifests, Doppler, tag resolution, schedules, access control |
+| [Workflow docs](docs/workflows/) | Running an ops workflow or calling a reusable workflow |
 
-Ops portal (GitHub Pages): [`docs/index.html`](docs/index.html).
+Ops portal (GitHub Pages): [`docs/index.html`](docs/index.html), published with the setup guide by [ops-publish-site](docs/workflows/ops-publish-site.md).
+
+## Configuration
+
+| Path | What it holds | Schema |
+|------|---------------|--------|
+| [`config/manifests/`](config/manifests/) | One file per deployable app: source repo, build, platform, Doppler project, and per-target settings including `githubEnvironment` | [`schemas/manifest.v1.schema.json`](schemas/manifest.v1.schema.json) |
+| [`config/schedules/tests.json`](config/schedules/tests.json) | Cron test profiles and the GitHub Environments for manual and scheduled test runs | [`schemas/schedules.v1.schema.json`](schemas/schedules.v1.schema.json) |
+| [`config/schedules/deploys.json`](config/schedules/deploys.json) | Scheduled deploys: cron, manifest, target, GitHub Environment. Only apps listed here deploy on a schedule | [`schemas/schedules.v1.schema.json`](schemas/schedules.v1.schema.json) |
+| [`config/platforms/`](config/platforms/) | App Engine `app.yaml` and Firebase `firebase.json` templates rendered at deploy time | — |
+
+No workflow or script hard-codes an app or GitHub Environment name; they come from these files. See [Naming GitHub Environments](docs/platform.md#naming-github-environments).
+
+## Common changes
+
+| Change | Steps |
+|--------|-------|
+| Add a deployable app | Add `config/manifests/<name>.json` (copy an existing one). Add `<name>` to the `manifest_name` choices of `ops-deploy-frontend.yml` or `ops-deploy-backend.yml`. Make sure each `githubEnvironment` it names exists in GitHub with its secrets. |
+| Add a scheduled deploy | Add an entry to `config/schedules/deploys.json` and the same cron to the deploy workflow's `on.schedule`. Create the entry's `githubEnvironment` (usually a `-scheduled` copy of the manual one). |
+| Add or rename a GitHub Environment | Follow the [naming convention](docs/platform.md#naming-github-environments). Create it in **Settings → Environments** with reviewers, branch rule and secrets **before** changing any config to reference it. |
+| Change a test schedule | Edit `config/schedules/tests.json` and the matching cron in `ops-run-tests.yml`. |
+| Rotate a secret | Update it in every environment that holds a copy, for example both `fe-prod` and `fe-prod-scheduled`. |
+
+Validate locally before opening a pull request (CI runs the same checks):
+
+```bash
+python3 scripts/test_workflow_guardrails.py
+python3 .github/actions/release-model/test_release_model.py
+python3 .github/actions/release-model/test_action.py
+python3 .github/actions/release-model/test_staging.py
+python3 scripts/validate-workflow-guardrails.py
+scripts/validate-manifests.sh config/manifests/ schemas/manifest.v1.schema.json
+check-jsonschema --schemafile schemas/schedules.v1.schema.json config/schedules/*.json
+actionlint -color .github/workflows/*.yml
+shellcheck --severity=warning scripts/*.sh .github/actions/*/*.sh
+```
 
 ## Debugging workflow runs
 
@@ -62,9 +101,15 @@ python3 scripts/validate-workflow-guardrails.py
 ```
 
 The checks reject mutable action branches, external checkouts without a separate
-path, missing workflow permissions, unresolved scheduled manifests, unsafe
-post-increment under `set -e`, caller-side environment credential mapping, and
-destructive cleanup that does not default to dry-run.
+path, missing workflow permissions, unresolved scheduled manifests, deploy-workflow
+crons that do not match exactly one `config/schedules/deploys.json` entry (or an
+entry naming a missing manifest or target), unsafe post-increment under `set -e`,
+caller-side environment credential mapping, and destructive cleanup that does not
+default to dry-run.
+
+Nothing checks GitHub Environment names against what exists in GitHub. A
+misspelled name makes GitHub create an unprotected, empty environment, so review
+name changes carefully.
 
 ## App Engine deploy
 
@@ -120,21 +165,25 @@ or another declared secret must be able to read that repository when the
 caller is a different repo. `github.token` is enough when the caller is this
 repository.
 
-`reusable-ci-npm-publish` and `reusable-ci-tag-release` copy
-[`scripts/release_model.py`](scripts/release_model.py) from `platform/scripts/`
-to `$RUNNER_TEMP/release-model/release_model.py` and leave the checkout in
-place. `reusable-ci-changeset-check` and `reusable-ci-commit-check` still
-check the templates repository out at `ext_repo`, copy the same file, and
-remove that checkout because later steps only read `$RUNNER_TEMP`.
+The release implementation and its tests live together under
+[`release-model`](.github/actions/release-model/). During the bootstrap phase,
+the reusable workflows copy `release_model.py` from that action directory to
+`$RUNNER_TEMP/release-model/release_model.py`. The unified action removes that
+staging step after callers can reference its immutable commit SHA.
 
 Most of those steps call `release_model.py` as a command
 (`python3 "$RUNNER_TEMP/release-model/release_model.py" <command> ...`).
 `create-tag-release.py` imports `release_model` as a module from `PYTHONPATH`
 and is run as
-`python3 platform/.github/actions/create-tag-release/create-tag-release.py`.
-See `release_model.py`'s `build_parser()` for the command list (`plan`,
+`python3 platform/.github/actions/release-model/create-tag-release.py`.
+See the action's `release_model.py` `build_parser()` for the command list (`plan`,
 `validate-pr`, `check-pr`, `shift-prerelease`, `skip-if-published`,
 `verify-dist-tag`, `assert-versions`, ...).
+
+The unified [release-model action](.github/actions/release-model/README.md)
+replaces that distributed staging contract in two phases. The action is added
+first so it has an immutable commit SHA; reusable workflow callers migrate to
+that SHA in the follow-up change.
 
 ## Composite actions
 
@@ -142,6 +191,7 @@ Building blocks used by the reusables (not called from app repos directly):
 
 | Action | Purpose |
 |--------|---------|
+| [release-model](.github/actions/release-model/action.yml) | Check out the versioned templates implementation and run one release operation |
 | [log-run-context](.github/actions/log-run-context/action.yml) | Print run context and a step summary |
 | [stage-version-command](.github/actions/stage-version-command/action.yml) | Stage the Changesets version script |
 | [inspect-pending-changesets](.github/actions/inspect-pending-changesets/action.yml) | Count pending changeset files |
@@ -150,6 +200,7 @@ Building blocks used by the reusables (not called from app repos directly):
 | [decide-publish-ready](.github/actions/decide-publish-ready/action.yml) | Decide whether versions are already in git and safe to publish |
 | [publish-npm-packages](.github/actions/publish-npm-packages/action.yml) | Publish with the stable or prerelease command |
 | [publish-release-event](.github/actions/publish-release-event/action.yml) | Validate a bare semver tag and publish the release fact |
+| [create-tag-release](.github/actions/create-tag-release/action.yml) | Plan a bare semver tag from conventional commits, update `package.json` and `CHANGELOG.md`, push the tag, and create the GitHub Release |
 | [run-database-migration](.github/actions/run-database-migration/action.yml) | Run the migration command, through Doppler when the bundle has it |
 | [inject-doppler-token](.github/actions/inject-doppler-token/action.yml) | Write the Doppler token into the ephemeral app.yaml |
 | [deploy-gae-version](.github/actions/deploy-gae-version/action.yml) | Deploy App Engine with `--no-promote` |
@@ -163,7 +214,7 @@ Building blocks used by the reusables (not called from app repos directly):
 | [upload-npm-logs](.github/actions/upload-npm-logs/action.yml) | Collect npm debug logs on failure and upload them |
 | [resolve-git-ref](.github/actions/resolve-git-ref/action.yml) | Resolve `latest` or an explicit tag (`v` prefix optional) |
 | [resolve-manifest](.github/actions/resolve-manifest/action.yml) | Load a manifest for an environment |
-| [resolve-deployment-environment](.github/actions/resolve-deployment-environment/action.yml) | Map trigger to GitHub Environment |
+| [resolve-deployment-environment](.github/actions/resolve-deployment-environment/action.yml) | Pick the GitHub Environment from names passed in from config (manifest, `deploys.json`, `tests.json`) |
 | [stage-node-artifact](.github/actions/stage-node-artifact/action.yml) | Stage the deploy bundle |
 | [render-config](.github/actions/render-config/action.yml) | Render config templates |
 | [publish-allure](.github/actions/publish-allure/action.yml) | Merge Allure shards, generate HTML, push `allure-report/` on `gh-pages` (`GITHUB_TOKEN`) |

@@ -11,7 +11,7 @@ on:
     inputs:
       templates_repository:
         description: >
-          Templates repository that contains scripts/release_model.py, as owner/name.
+          Templates repository that contains the release-model action, as owner/name.
           Required. A called workflow runs in the consumer repository, so the consumer passes this.
         type: string
         required: true
@@ -117,7 +117,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/release-model"
-          cp ext_repo/scripts/release_model.py "$RUNNER_TEMP/release-model/release_model.py"
+          cp ext_repo/.github/actions/release-model/release_model.py "$RUNNER_TEMP/release-model/release_model.py"
           rm -rf ext_repo
 
 

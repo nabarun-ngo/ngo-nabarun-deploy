@@ -1,8 +1,9 @@
 name: Ops — Run Tests
 
 # Thin caller for executing Cucumber tests with Allure reporting.
-# Manual dispatch and scheduled cron profiles. Manual prod binds to GitHub
-# Environment 'prod' (reviewers). Scheduled runs bind to 'tests-scheduled'.
+# Manual dispatch and scheduled cron profiles. The GitHub Environment comes from
+# config/schedules/tests.json: manualGithubEnvironments.<target> for manual runs,
+# the profile's githubEnvironment for scheduled runs.
 
 on:
   workflow_dispatch:
@@ -72,6 +73,7 @@ jobs:
           trigger_type: ${{ github.event_name }}
           target_environment: ${{ steps.resolve.outputs.target_environment }}
           workflow_type: tests
+          github_environment: ${{ steps.resolve.outputs.github_environment }}
 
       - name: Finalize profile
         id: finalize

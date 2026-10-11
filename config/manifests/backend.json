@@ -40,7 +40,7 @@
   },
   "database": {
     "migrate": true,
-    "command": "DATABASE_URL=demo npm run migrate:deploy && npm run seed"
+    "command": "npm run migrate:deploy && npm run seed"
   },
   "healthCheck": {
     "enabled": true,

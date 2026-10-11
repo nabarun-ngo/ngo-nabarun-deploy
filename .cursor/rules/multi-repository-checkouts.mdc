@@ -42,9 +42,11 @@ repository must:
    `bash platform/.github/actions/<name>/<name>.sh`, with the same `env`
    the composite `action.yml` sets. Keep the workflow step `id` so
    `GITHUB_OUTPUT` still maps to `steps.<id>.outputs`.
-6. Leave `platform/` in place for the rest of the job. Copy
-   `platform/scripts/release_model.py` to `$RUNNER_TEMP` when a script needs
-   it. Do not delete the checkout before those scripts run.
+6. Leave `platform/` in place for the rest of the job. During the release-model
+   bootstrap phase, copy
+   `platform/.github/actions/release-model/release_model.py` to `$RUNNER_TEMP`
+   when a legacy script needs it. Do not delete the checkout before those
+   scripts run.
 7. For a composite action that also runs third-party steps (`setup-node`,
    `upload-artifact`, `download-artifact`), keep those `uses:` lines in the
    workflow and point only the local script at `platform/`.

@@ -219,13 +219,18 @@
     },
     "environmentBlock": {
       "type": "object",
-      "required": ["sourceRef"],
+      "required": ["sourceRef", "githubEnvironment"],
       "additionalProperties": true,
       "description": "Per-environment configuration block. Additional keys (e.g. gaeService) are application-specific and referenced via deploy.serviceKey.",
       "properties": {
         "sourceRef": {
           "type": "string",
           "description": "Git branch or tag to deploy from (e.g. 'stage', 'main', 'v1.2.3'). 'latest' triggers auto-resolution."
+        },
+        "githubEnvironment": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "GitHub Environment a manual deploy to this environment binds to. It supplies the deploy secrets and the reviewer rule. Follow the naming convention in docs/platform.md (e.g. be-stage) and create it in GitHub first."
         },
         "secrets": {
           "$ref": "#/definitions/environmentSecrets"

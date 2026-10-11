@@ -24,8 +24,9 @@
     "registered it. 'ng build' defaults to the production configuration, which",
     "sets serviceWorker in angular.json, so this app always ships one.",
     "",
-    "Doppler must supply the app's NG_APP_* values; they are inlined into the",
-    "browser bundle at build time and the build fails to compile on a missing key."
+    "Both frontend apps share one Doppler project, frontend. This app reads the",
+    "NG_APP_* values from that project's stg or prd config. They are inlined",
+    "into the browser bundle at build time and the build fails on a missing key."
   ],
   "apiVersion": "deploy.platform/v1",
   "kind": "Application",
@@ -55,13 +56,14 @@
     "serviceKey": "firebaseSite",
     "secrets": {
       "provider": "doppler",
-      "project": "frontend-internal",
+      "project": "frontend",
       "bundleCli": false
     }
   },
   "environments": {
     "stage": {
       "sourceRef": "develop",
+      "githubEnvironment": "fe-stage",
       "firebaseSite": "ngonabarun-portal-stage",
       "secrets": {
         "config": "stg"
@@ -70,6 +72,7 @@
     },
     "prod": {
       "sourceRef": "main",
+      "githubEnvironment": "fe-prod",
       "firebaseSite": "ngonabarun-portal",
       "secrets": {
         "config": "prd"

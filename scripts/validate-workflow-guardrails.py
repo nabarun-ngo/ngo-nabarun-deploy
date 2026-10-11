@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -196,6 +197,72 @@ def scheduled_dry_run_errors(text: str, relative: str) -> list[str]:
     return errors
 
 
+WORKFLOW_CRON = re.compile(r"^\s*-\s*cron:\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
+
+
+def deploy_schedule_errors(workflow_files: list[Path]) -> list[str]:
+    """Check config/schedules deploy entries against manifests and workflow crons.
+
+    A scheduled deploy finds its entry by cron at run time, so every cron in an
+    ops-deploy-* workflow must match exactly one deploy entry, and each entry
+    must name an existing manifest that defines the target.
+    """
+    errors: list[str] = []
+    entries: list[tuple[str, dict]] = []
+    for path in sorted((ROOT / "config" / "schedules").glob("*.json")):
+        relative = path.relative_to(ROOT)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for entry in data.get("schedules", []):
+            deploy = entry.get("deploy")
+            if not deploy:
+                continue
+            entries.append((str(relative), entry))
+            manifest = deploy.get("manifest", "")
+            manifest_path = ROOT / "config" / "manifests" / f"{manifest}.json"
+            if not manifest_path.is_file():
+                errors.append(
+                    f"{relative}: deploy schedule '{entry.get('id')}' names "
+                    f"manifest '{manifest}', which does not exist"
+                )
+                continue
+            environments = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            ).get("environments", {})
+            if deploy.get("target") not in environments:
+                errors.append(
+                    f"{relative}: deploy schedule '{entry.get('id')}' targets "
+                    f"'{deploy.get('target')}', which manifest '{manifest}' does not define"
+                )
+
+    workflow_crons: list[tuple[str, str]] = []
+    for path in workflow_files:
+        if not path.name.startswith("ops-deploy-"):
+            continue
+        text = path.read_text(encoding="utf-8")
+        for match in WORKFLOW_CRON.finditer(text):
+            cron = match.group(1)
+            workflow_crons.append((str(path.relative_to(ROOT)), cron))
+            count = sum(1 for _, entry in entries if entry.get("cron") == cron)
+            if count != 1:
+                errors.append(
+                    f"{path.relative_to(ROOT)}:{line_number(text, match.start())}: "
+                    f"cron '{cron}' must match exactly one deploy schedule in "
+                    f"config/schedules/, found {count}"
+                )
+
+    for relative, entry in entries:
+        cron = entry.get("cron")
+        if not cron:
+            continue
+        count = sum(1 for _, workflow_cron in workflow_crons if workflow_cron == cron)
+        if count != 1:
+            errors.append(
+                f"{relative}: deploy schedule '{entry.get('id')}' cron '{cron}' "
+                f"must appear in exactly one ops-deploy-* workflow, found {count}"
+            )
+    return errors
+
+
 def checkout_blocks(text: str) -> list[tuple[int, str]]:
     """Return actions/checkout step blocks and their first line number."""
     lines = text.splitlines()
@@ -275,6 +342,8 @@ def main() -> int:
                     f"{relative}:{line_number(text, match.start())}: cloud and "
                     "environment secrets must be resolved by the environment-bound job"
                 )
+
+    errors.extend(deploy_schedule_errors(workflow_files))
 
     source_files = [
         *workflow_files,

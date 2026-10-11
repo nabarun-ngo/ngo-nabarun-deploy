@@ -10,6 +10,8 @@ Execute shards bind to a GitHub Environment when `use_gh_env` is true (default).
 
 The test repository must honor `-DSHARD_INDEX` / `-DTOTAL_SHARDS` if you want shards to split work. Feature files are counted only to size the matrix (`{"shard":[1,…,N]}` plus output `total_shards`). Empty `test_repository` fails discover (it must not fall back to this ops repo).
 
+Discovery and execution use JDK 21, matching the automation repository's Maven compiler target.
+
 ## Who calls it
 
 [ops-run-tests](ops-run-tests.md) in this repository. The reusable uses `./.github/actions/publish-allure`, so it is not meant to be called from another repo.

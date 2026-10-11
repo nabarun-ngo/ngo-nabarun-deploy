@@ -4,16 +4,14 @@ Source: [`.github/workflows/ops-deploy-backend.yml`](../../.github/workflows/ops
 
 Deploy the backend manifest to App Engine through [reusable-deploy-gae-node](reusable-deploy-gae-node.md). That page describes the bundle, what Cloud Build receives, and where a failed run stops.
 
-Triggers: `workflow_dispatch`, and `repository_dispatch` type `Trigger-Deploy-Backend`. An application release does not start this workflow.
+Trigger: `workflow_dispatch` only. Backend deploys are manual; there is no schedule or `repository_dispatch` hook, and an application release does not start this workflow.
 
 | Target | GitHub Environment | Approval |
 |--------|-------------------|----------|
-| `stage` | `stage` | Required |
-| `prod` | `prod` | Required |
+| `stage` | `be-stage` | Required |
+| `prod` | `be-prod` | Required |
 
-`stage` must have at least one required reviewer in GitHub. The workflow binds the job to that environment; it cannot create the reviewer rule. `Trigger-Deploy-Backend` uses the same environments, so a dispatched stage or prod run also waits.
-
-`Trigger-Deploy-Backend` is an explicit deploy request. The payload names the manifest, environment, and tag.
+The names come from `environments.<target>.githubEnvironment` in `config/manifests/backend.json`. `be-stage` must have at least one required reviewer in GitHub. The workflow binds the job to that environment; it cannot create the reviewer rule.
 
 ## How operators consume it
 
@@ -22,14 +20,3 @@ Triggers: `workflow_dispatch`, and `repository_dispatch` type `Trigger-Deploy-Ba
 - `manifest_name`: `backend`
 - `target_environment`: `stage` or `prod`
 - `tag_name`: empty or `latest` to auto-resolve (see [platform](../platform.md))
-
-An operator, or another workflow, may request the same deploy:
-
-```bash
-gh api --method POST -H "Accept: application/vnd.github+json" \
-  /repos/YOUR_ORG/deploy-platform/dispatches \
-  -f event_type=Trigger-Deploy-Backend \
-  -f 'client_payload[tag_name]=1.4.0-beta.1' \
-  -f 'client_payload[manifest_name]=backend' \
-  -f 'client_payload[target_environment]=stage'
-```

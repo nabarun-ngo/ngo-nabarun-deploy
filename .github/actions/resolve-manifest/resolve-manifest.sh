@@ -73,6 +73,8 @@ DOPPLER_PROJECT=$(echo "$MANIFEST"   | jq -r '.deploy.secrets.project // ""')
 DOPPLER_BUNDLE=$(echo "$MANIFEST"    | jq -r '.deploy.secrets.bundleCli // false')
 DOPPLER_CONFIG=$(echo "$ENV_BLOCK"   | jq -r '.secrets.config // ""')
 
+GITHUB_ENVIRONMENT=$(echo "$ENV_BLOCK"   | jq -r '.githubEnvironment // ""')
+
 # Emit outputs
 {
   echo "app_name=$APP_NAME"
@@ -100,6 +102,7 @@ DOPPLER_CONFIG=$(echo "$ENV_BLOCK"   | jq -r '.secrets.config // ""')
   echo "doppler_project=$DOPPLER_PROJECT"
   echo "doppler_bundle_cli=$DOPPLER_BUNDLE"
   echo "doppler_config=$DOPPLER_CONFIG"
+  echo "github_environment=$GITHUB_ENVIRONMENT"
   # Emit full manifest for audit (single-line JSON)
   printf "manifest_json=%s\n" "$(echo "$MANIFEST" | jq -c .)"
 } >> "$GITHUB_OUTPUT"

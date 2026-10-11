@@ -1,5 +1,9 @@
 {
   "$schema": "../../schemas/schedules.v1.schema.json",
+  "manualGithubEnvironments": {
+    "stage": "tests-stage",
+    "prod": "tests-prod"
+  },
   "schedules": [
     {
       "id": "nightly-smoke",

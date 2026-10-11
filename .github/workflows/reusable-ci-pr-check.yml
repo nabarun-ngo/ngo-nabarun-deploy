@@ -9,7 +9,7 @@ name: Reusable — CI PR Check
 # The pull request title must be a Conventional Commit. That is a hard
 # failure, because the title is editable in GitHub and can raise the release
 # bump. Commit subjects on the branch are warnings only.
-# Grammar matches scripts/release_model.py COMMIT_RE:
+# Grammar matches .github/actions/release-model/release_model.py COMMIT_RE:
 # fix|feat|docs|chore|ci, optional scope, optional !, then ": ".
 #   fix:     patch
 #   feat:    minor
@@ -136,7 +136,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          # Keep aligned with scripts/release_model.py COMMIT_RE.
+          # Keep aligned with .github/actions/release-model/release_model.py COMMIT_RE.
           pattern='^(fix|feat|docs|chore|ci)(\([^)]+\))?(!)?: [^[:space:]].*$'
           failed=0
 

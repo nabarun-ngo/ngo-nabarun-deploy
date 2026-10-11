@@ -3,7 +3,7 @@ description: >
   Plan a bare semver tag from conventional commits, update package.json and
   CHANGELOG.md, push the tag, and create the GitHub Release.
   Requires release_model.py on PYTHONPATH. The calling workflow checks out
-  templates_repository and stages scripts/release_model.py there.
+  templates_repository and stages the release-model action implementation.
 
 inputs:
   version:
@@ -61,4 +61,4 @@ runs:
         GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         GIT_COMMITTER_NAME: github-actions[bot]
         GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-      run: python3 "$GITHUB_ACTION_PATH/create-tag-release.py"
+      run: python3 "$GITHUB_ACTION_PATH/../release-model/create-tag-release.py"

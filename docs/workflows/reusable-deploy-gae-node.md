@@ -21,7 +21,7 @@ Logical target (`stage` / `prod`) remains `target_environment`.
 
 ## How the client consumes it
 
-Do not `uses:` this from an app repo. Operators run **Ops — Deploy Backend (GAE)**, or send `repository_dispatch` type `Trigger-Deploy-Backend`. That caller resolves the manifest and invokes this reusable:
+Do not `uses:` this from an app repo. Operators run **Ops — Deploy Backend (GAE)** manually. That caller resolves the manifest and invokes this reusable:
 
 ```yaml
 jobs:

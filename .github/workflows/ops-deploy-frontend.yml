@@ -1,12 +1,14 @@
 name: Ops — Deploy Frontend (Firebase)
 
-# Manual deploy of one frontend manifest, plus the biweekly public-site stage deploy.
+# Manual deploy of one frontend manifest, plus scheduled deploys.
 # An application release does not start this workflow.
-# Manual stage and prod runs require reviewers; the schedule uses stage-scheduled.
+# A scheduled run deploys whatever config/schedules/deploys.json lists for its cron
+# and binds to that entry's githubEnvironment. A manual run binds to the manifest's
+# environments.<target>.githubEnvironment.
 
 on:
   schedule:
-    # 1st and 15th of each month at 02:00 UTC
+    # Each cron must match exactly one entry in config/schedules/deploys.json.
     - cron: '0 2 1,15 * *'
 
   workflow_dispatch:
@@ -35,13 +37,37 @@ permissions:
   id-token: write
 
 jobs:
+  trigger:
+    name: Resolve trigger
+    runs-on: ubuntu-latest
+    outputs:
+      manifest_name: ${{ steps.resolve.outputs.manifest_name }}
+      target_environment: ${{ steps.resolve.outputs.target_environment }}
+      tag_name: ${{ steps.resolve.outputs.tag_name }}
+      schedule_github_environment: ${{ steps.resolve.outputs.schedule_github_environment }}
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v7
+
+      - name: Resolve scheduled or manual deploy
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CRON_SCHEDULE: ${{ github.event.schedule }}
+          INPUT_MANIFEST: ${{ inputs.manifest_name }}
+          INPUT_TARGET_ENV: ${{ inputs.target_environment }}
+          INPUT_TAG: ${{ inputs.tag_name }}
+        run: bash scripts/resolve-deploy-schedule.sh
+
   context:
     name: Setup context
+    needs: trigger
     uses: ./.github/workflows/reusable-setup-context.yml
     with:
-      manifest_name: ${{ github.event_name == 'schedule' && 'fe-public-site' || inputs.manifest_name }}
-      target_environment: ${{ github.event_name == 'schedule' && 'stage' || inputs.target_environment }}
-      tag_name: ${{ github.event_name == 'schedule' && 'latest' || inputs.tag_name }}
+      manifest_name: ${{ needs.trigger.outputs.manifest_name }}
+      target_environment: ${{ needs.trigger.outputs.target_environment }}
+      tag_name: ${{ needs.trigger.outputs.tag_name }}
       workflow_type: deploy
 
   manifest:
@@ -64,6 +90,7 @@ jobs:
       doppler_project: ${{ steps.resolve.outputs.doppler_project }}
       doppler_config: ${{ steps.resolve.outputs.doppler_config }}
       source_ref: ${{ steps.resolve.outputs.source_ref }}
+      github_environment: ${{ steps.resolve.outputs.github_environment }}
 
     steps:
       - name: Log run context
@@ -111,11 +138,11 @@ jobs:
           tag_name: ${{ needs.context.outputs.tag_name }}
           target_branch: ${{ needs.manifest.outputs.source_ref }}
           repository: ${{ needs.manifest.outputs.repository }}
-          github_token: ${{ secrets.PAT }}
+          github_token: ${{ secrets.PAT || github.token }}
 
   resolve_env:
     name: Resolve GitHub Environment
-    needs: context
+    needs: [trigger, context, manifest]
     runs-on: ubuntu-latest
     outputs:
       gh_env: ${{ steps.resolve.outputs.gh_env }}
@@ -135,6 +162,9 @@ jobs:
           trigger_type: ${{ github.event_name }}
           target_environment: ${{ needs.context.outputs.target_environment }}
           workflow_type: deploy
+          manifest_name: ${{ needs.context.outputs.manifest_name }}
+          github_environment: ${{ needs.manifest.outputs.github_environment }}
+          schedule_github_environment: ${{ needs.trigger.outputs.schedule_github_environment }}
 
   deploy:
     name: Deploy Firebase

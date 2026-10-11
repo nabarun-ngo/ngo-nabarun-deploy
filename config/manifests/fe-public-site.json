@@ -9,7 +9,12 @@
     "",
     "configTemplate resolves to config/platforms/firebase/firebase.json.tpl",
     "which uses ${BUILD_OUTPUT_PATH} — filled from build.outputPath at deploy time.",
-    "No 'layout' flag needed."
+    "No 'layout' flag needed.",
+    "",
+    "This app shares the Doppler project frontend with the internal portal.",
+    "Stage reads config stg and production reads config prd.",
+    "",
+    "The biweekly production rebuild is declared in config/schedules/deploys.json."
   ],
   "apiVersion": "deploy.platform/v1",
   "kind": "Application",
@@ -31,7 +36,7 @@
     "runtime": "node",
     "nodeVersion": "24",
     "install": "npm ci",
-    "command": "npm run build",
+    "command": "npm run build --workspace=@nabarun-ngo/public-site",
     "outputPath": "out",
     "env": {
       "NEXT_TELEMETRY_DISABLED": "1"
@@ -43,13 +48,14 @@
     "serviceKey": "firebaseSite",
     "secrets": {
       "provider": "doppler",
-      "project": "frontend-public",
+      "project": "frontend",
       "bundleCli": false
     }
   },
   "environments": {
     "stage": {
       "sourceRef": "develop",
+      "githubEnvironment": "fe-stage",
       "firebaseSite": "ngonabarun-stage",
       "secrets": {
         "config": "stg"
@@ -58,6 +64,7 @@
     },
     "prod": {
       "sourceRef": "main",
+      "githubEnvironment": "fe-prod",
       "firebaseSite": "nabarunngo",
       "secrets": {
         "config": "prd"

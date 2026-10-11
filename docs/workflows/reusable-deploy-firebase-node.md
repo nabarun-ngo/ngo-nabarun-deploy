@@ -2,7 +2,7 @@
 
 Source: [`.github/workflows/reusable-deploy-firebase-node.yml`](../../.github/workflows/reusable-deploy-firebase-node.yml)
 
-Build (optional Doppler) and deploy a Node.js frontend to Firebase Hosting.
+Build (optional Doppler) and deploy a Node.js frontend to Firebase Hosting. Both frontend manifests use Doppler project `frontend`. The build reads `DOPPLER_TOKEN` from the bound `fe-*` GitHub Environment.
 
 Build and deploy jobs bind to a GitHub Environment when `use_gh_env` is true (default). Same flags as the CI reusables (`use_gh_env`, `gh_env`).
 
@@ -19,7 +19,7 @@ Build and deploy jobs bind to a GitHub Environment when `use_gh_env` is true (de
 
 ## How the client consumes it
 
-Operators run **Ops — Deploy Frontend (Firebase)**, or wait for the biweekly public-site schedule. Add a Firebase manifest and extend that caller's choice list. See [platform setup](../platform.md).
+Operators run **Ops — Deploy Frontend (Firebase)**, or wait for the biweekly public-site production rebuild. Add a Firebase manifest and extend that caller's choice list. See [platform setup](../platform.md).
 
 ```yaml
 jobs:

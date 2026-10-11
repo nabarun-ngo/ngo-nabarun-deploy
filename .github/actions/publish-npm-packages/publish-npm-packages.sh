@@ -7,9 +7,16 @@
 #   WORK_DIR, NODE_AUTH_TOKEN, NPM_TOKEN, CURRENT_BRANCH, STABLE_BRANCH,
 #   PRERELEASE_BRANCH, STABLE_COMMAND, PRERELEASE_COMMAND, PRERELEASE_TAG
 #
-# release_model.py must already be staged at $RUNNER_TEMP/release-model.
+# RELEASE_MODEL_PATH points to release_model.py. Legacy callers may still stage
+# it at $RUNNER_TEMP/release-model until they migrate to the unified action.
 
 set -euo pipefail
+
+RELEASE_MODEL_PATH="${RELEASE_MODEL_PATH:-$RUNNER_TEMP/release-model/release_model.py}"
+if [[ ! -f "$RELEASE_MODEL_PATH" ]]; then
+  echo "::error::release_model.py not found at $RELEASE_MODEL_PATH"
+  exit 1
+fi
 
 if [[ -z "${WORK_DIR}" ]]; then
   echo "::error::working_directory is required."
@@ -27,13 +34,13 @@ run_publish() {
 }
 
 skip_if_published() {
-  python3 "$RUNNER_TEMP/release-model/release_model.py" skip-if-published --root .
+  python3 "$RELEASE_MODEL_PATH" skip-if-published --root .
 }
 
 verify_dist_tag() {
   local tag="$PRERELEASE_TAG"
   [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]] || tag="latest"
-  python3 "$RUNNER_TEMP/release-model/release_model.py" verify-dist-tag --root . --tag "$tag"
+  python3 "$RELEASE_MODEL_PATH" verify-dist-tag --root . --tag "$tag"
 }
 
 if skip_if_published; then
@@ -44,7 +51,7 @@ fi
 if [[ "$CURRENT_BRANCH" == "$PRERELEASE_BRANCH" ]]; then
   npm config set tag "$PRERELEASE_TAG"
   echo "::notice::Running prerelease publish command: $PRERELEASE_COMMAND"
-  python3 "$RUNNER_TEMP/release-model/release_model.py" assert-versions --root . --tag "$PRERELEASE_TAG" --prerelease
+  python3 "$RELEASE_MODEL_PATH" assert-versions --root . --tag "$PRERELEASE_TAG" --prerelease
   run_publish "$PRERELEASE_COMMAND"
   verify_dist_tag
 elif [[ "$CURRENT_BRANCH" == "$STABLE_BRANCH" ]]; then
@@ -53,7 +60,7 @@ elif [[ "$CURRENT_BRANCH" == "$STABLE_BRANCH" ]]; then
     echo "::error::Refusing to publish on $STABLE_BRANCH while .changeset/pre.json exists"
     exit 1
   fi
-  python3 "$RUNNER_TEMP/release-model/release_model.py" assert-versions --root . --tag beta
+  python3 "$RELEASE_MODEL_PATH" assert-versions --root . --tag beta
   while IFS= read -r -d '' pkg; do
     private=$(jq -r '.private // false' "$pkg")
     ver=$(jq -r '.version // empty' "$pkg")

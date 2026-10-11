@@ -1,0 +1,15 @@
+{
+  "$schema": "../../schemas/schedules.v1.schema.json",
+  "schedules": [
+    {
+      "id": "public-site-prod-rebuild",
+      "description": "Rebuild the public site in prod on the 1st and 15th. It fetches content from the API at build time, so rebuilding the latest stable tag refreshes content even without a new release.",
+      "cron": "0 2 1,15 * *",
+      "deploy": {
+        "manifest": "fe-public-site",
+        "target": "prod"
+      },
+      "githubEnvironment": "fe-prod-scheduled"
+    }
+  ]
+}

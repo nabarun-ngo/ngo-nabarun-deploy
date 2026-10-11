@@ -2,13 +2,23 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://deploy.platform/schemas/schedules.v1.schema.json",
   "title": "SchedulesConfig",
-  "description": "Schema for config/schedules/*.json — scheduled test run profiles.",
+  "description": "Schema for config/schedules/*.json — scheduled test runs (tests.json) and scheduled deploys (deploys.json). Each entry has either a test profile or a deploy target.",
   "type": "object",
   "required": ["schedules"],
   "additionalProperties": false,
   "properties": {
     "$schema": {
       "type": "string"
+    },
+    "manualGithubEnvironments": {
+      "type": "object",
+      "required": ["stage", "prod"],
+      "additionalProperties": false,
+      "description": "Test schedules only. GitHub Environment a manual (workflow_dispatch) test run binds to, keyed by target. Required in tests.json. Follow the naming convention in docs/platform.md (e.g. tests-stage).",
+      "properties": {
+        "stage": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "prod": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+      }
     },
     "schedules": {
       "type": "array",
@@ -18,10 +28,24 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schedules": {
+            "contains": { "required": ["profile"] }
+          }
+        }
+      },
+      "then": {
+        "required": ["manualGithubEnvironments"]
+      }
+    }
+  ],
   "definitions": {
     "Schedule": {
       "type": "object",
-      "required": ["id", "profile", "githubEnvironment"],
+      "required": ["id", "githubEnvironment"],
       "additionalProperties": false,
       "properties": {
         "id": {
@@ -35,7 +59,7 @@
         },
         "cron": {
           "type": "string",
-          "description": "Unix cron expression (5 fields). Required when trigger is not set.",
+          "description": "Unix cron expression (5 fields). Required when trigger is not set. Must also appear in the workflow's on.schedule, which GitHub reads only from the workflow file.",
           "pattern": "^(\\*|[0-9,\\-/]+) (\\*|[0-9,\\-/]+) (\\*|[0-9,\\-/]+) (\\*|[0-9,\\-/]+) (\\*|[0-9,\\-/]+)$"
         },
         "trigger": {
@@ -50,14 +74,28 @@
         "profile": {
           "$ref": "#/definitions/TestProfile"
         },
+        "deploy": {
+          "$ref": "#/definitions/DeployTarget"
+        },
         "githubEnvironment": {
           "type": "string",
-          "description": "GitHub Environment name used to scope secrets for this run (e.g. tests-scheduled)."
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "GitHub Environment a scheduled run binds to (e.g. tests-scheduled, fe-prod-scheduled). Follow the naming convention in docs/platform.md."
         }
       },
-      "oneOf": [
-        { "required": ["cron"], "not": { "required": ["trigger"] } },
-        { "required": ["trigger", "eventType"], "not": { "required": ["cron"] } }
+      "allOf": [
+        {
+          "oneOf": [
+            { "required": ["cron"], "not": { "required": ["trigger"] } },
+            { "required": ["trigger", "eventType"], "not": { "required": ["cron"] } }
+          ]
+        },
+        {
+          "oneOf": [
+            { "required": ["profile"], "not": { "required": ["deploy"] } },
+            { "required": ["deploy"], "not": { "required": ["profile"] } }
+          ]
+        }
       ]
     },
     "TestProfile": {
@@ -89,6 +127,44 @@
           "description": "Per-shard job timeout in minutes."
         }
       }
+    },
+    "DeployTarget": {
+      "type": "object",
+      "required": ["manifest", "target"],
+      "additionalProperties": false,
+      "description": "What a scheduled deploy releases. Only manifests listed in a deploy schedule can deploy from a scheduled run.",
+      "properties": {
+        "manifest": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Manifest name (config/manifests/<manifest>.json)."
+        },
+        "target": {
+          "type": "string",
+          "enum": ["stage", "prod"],
+          "description": "Logical environment to deploy to; must be a key in the manifest's environments."
+        },
+        "tag": {
+          "type": "string",
+          "default": "latest",
+          "description": "Tag to deploy. 'latest' resolves the newest tag on the target's sourceRef."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "target": { "const": "prod" } },
+            "required": ["target"]
+          },
+          "then": {
+            "properties": {
+              "tag": {
+                "pattern": "^(latest|v?[0-9]+\\.[0-9]+\\.[0-9]+)$"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

@@ -258,7 +258,7 @@ jobs:
       # and rename version, commit, title, and createGithubReleases.
       - name: Version Packages pull request
         if: ${{ steps.pending.outputs.count != '0' }}
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
           cwd: ${{ inputs.working_directory }}
           version: bash "$RUNNER_TEMP/version-packages.sh"
